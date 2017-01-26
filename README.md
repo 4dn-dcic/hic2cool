@@ -7,9 +7,11 @@ This code was originally based off of the straw project by Neva C. Durand and Yu
 
 The following Python packages are required and can both be installed using pip:
 
-**h5py** $ pip install h5py
-
-**numpy** $ pip install numpy
+**h5py**
+**numpy**
+```
+$ pip install h5py numpy
+```
 
 Usage of the converter is:
 ```
