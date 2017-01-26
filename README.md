@@ -7,12 +7,12 @@ This code was originally based off of the straw project by Neva C. Durand and Yu
 
 The following Python packages are required and can both be installed using pip:
 
-**h5py** pip install h5py
+**h5py** $ pip install h5py
 
-**numpy** pip install numpy
+**numpy** $ pip install numpy
 
 Usage of the converter is:
-
-**python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp>**
-
+```
+$ python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp>
+```
 If an invalid bin size is given (i.e. one that does not correspond to a cooler resolution, the program will terminate and prompt you to enter a valid one)
