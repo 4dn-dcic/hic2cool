@@ -23,6 +23,7 @@ import h5py
 import math
 from collections import OrderedDict
 
+
 #read function
 def readcstr(f):
     # buf = bytearray()
@@ -70,6 +71,7 @@ def read_header(infile):
         length = struct.unpack('<i',req.read(4))[0]
         if name and length:
             formatted_name = 'chr' + name if name != 'All' else name
+            formatted_name = 'chrM' if formatted_name == 'chrMT' else formatted_name
             chrs[i] = [i, formatted_name, length]
     nBpRes = struct.unpack('<i',req.read(4))[0]
     # find bp delimited resolutions supported by the hic file
@@ -368,10 +370,6 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
     blockBinCount=list1[0]
     blockColumnCount=list1[1]
     blockNumbers = get_block_numbers_for_region_from_bin_position(regionIndices, blockBinCount, blockColumnCount, c1==c2)
-    yActual=[]
-    xActual=[]
-    nXs = []
-    nYs = []
     for i_set in (blockNumbers):
         records=read_block(req, i_set, blockMap)
         for j in range(len(records)):
@@ -389,16 +387,13 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
             if ((x>=origRegionIndices[0] and x<=origRegionIndices[1] and y>=origRegionIndices[2] and y<=origRegionIndices[3]) or ((c1==c2) and y>=origRegionIndices[0] and y<=origRegionIndices[1] and x>= origRegionIndices[2] and x<=origRegionIndices[3])):
                 c1_key = str(c1) + ":" + str(x)
                 c2_key = str(c2) + ":" + str(y)
-                nXs.append(nX)
-                nYs.append(nY)
-                xActual.append(c1_key)
-                yActual.append(c2_key)
                 bin_map[c1_key] = nX
                 bin_map[c2_key] = nY
                 if c1_key not in count_map.keys():
                     count_map[c1_key] = {}
                 if c2_key in count_map[c1_key].keys():
                     print('\nWARNING: multiple count entries found for the following pixel\n', c1_key, ' and ', c2_key, '   (in form chrom_idx:bin)\n')
+                    print('c1:  ', str(c1)+':'+str(x*binsize)+'|'+str(c2)+':'+str(y*binsize),' -->  old:', count_map[c1_key][c2_key], 'new: ',c)
                 count_map[c1_key][c2_key] = c
     covered_chr_pairs.append(chr_key)
 
@@ -418,7 +413,7 @@ def write_cool(h5file, chr_info, binsize, bin_map, count_map):
     bin_table, chr_offsets, by_chr_offset_map = create_bins(chr_info, binsize, bin_map)
     grp = h5file.create_group('bins')
     write_bins(grp, chr_names, bin_table, h5opts)
-    pixels_table, bin1_offsets = create_pixels(count_map, by_chr_offset_map)
+    pixels_table, bin1_offsets = create_pixels(count_map, by_chr_offset_map, len(bin_table))
     grp = h5file.create_group('pixels')
     write_pixels(grp, pixels_table, h5opts)
     grp = h5file.create_group('indexes')
@@ -438,8 +433,8 @@ def write_chroms(grp, chrs, h5opts):
     Write the chroms table, which includes chromosome names and length
     """
     # format chr_names and chr_lengths np arrays
-    chr_names = np.array([val[1] for val in chrs.values() if val[1] not in ["All", "chrMT"]], dtype=np.dtype('S32'))
-    chr_lengths = np.array([val[2] for val in chrs.values() if val[1] not in ["All", "chrMT"]])
+    chr_names = np.array([val[1] for val in chrs.values() if val[1] != 'All'], dtype=np.dtype('S32'))
+    chr_lengths = np.array([val[2] for val in chrs.values() if val[1] != 'All'])
     grp.create_dataset('name', shape=(len(chr_names),), dtype=np.dtype('S32'), data=chr_names, **h5opts)
     grp.create_dataset('length', shape=(len(chr_names),), dtype=np.int32, data=chr_lengths, **h5opts)
     return chr_names
@@ -459,7 +454,7 @@ def create_bins(chrs, binsize, bin_map):
     by_chr_offsets = {}
     for c_idx in chrs.keys():
         chr_name = chrs[c_idx][1]
-        if chr_name in ['All', 'chrMT']:
+        if chr_name == 'All':
             continue
         chr_size = chrs[c_idx][2]
         bin_start = 0
@@ -499,7 +494,7 @@ def write_bins(grp, chroms, bins, h5opts):
     grp.create_dataset('weight', shape=(n_bins,), dtype=np.float64, data=weights, **h5opts)
 
 
-def create_pixels(count_map, by_chr_offset_map):
+def create_pixels(count_map, by_chr_offset_map, n_bins):
     """
     Converts the countmap dumped by from the hic file into a 2D pixels array,
     with columns bin1 (int idx), bin2 (int idx), and count (int).
@@ -529,12 +524,15 @@ def create_pixels(count_map, by_chr_offset_map):
     converted_bin1 = {chr_key_to_bin(k, by_chr_offset_map): v for k,v in count_map.items()}
     ordered_counts_by_bins = OrderedDict(sorted(converted_bin1.items(), key=lambda t: t[0]))
     # build the 2d array. Columns are [bin1, bin2, count]. Sorted by bin1 then bin2 (ascending order)
-    for bin1, inner_val in ordered_counts_by_bins.items():
+    # loop through all possible bin indices, adding them to the pixel table if they are a valid bin1_idx
+    # every index is added
+    for bin1_idx in range(0, n_bins):
         # append the row offset for this bin1 in the pixels table
         bin1_offsets.append(len(pixel_2d_array))
         # loop through bin2s and counts
-        for bin2, count in inner_val.items():
-            pixel_2d_array.append([bin1, bin2, count])
+        if bin1_idx in ordered_counts_by_bins:
+            for bin2, count in ordered_counts_by_bins[bin1_idx].items():
+                pixel_2d_array.append([bin1_idx, bin2, count])
     return np.array(pixel_2d_array), np.array(bin1_offsets)
 
 
@@ -583,10 +581,10 @@ def hic2cool(norm, infile, unit, binsize, outfile):
     req, pair_footer_info, chr_footer_info = read_footer(req, masteridx, norm, unit, binsize)
     covered_chr_pairs = []
     for chr_x in used_chrs.keys():
-        if used_chrs[chr_x][1] in ['All', 'chrMT']:
+        if used_chrs[chr_x][1] == 'All':
             continue
         for chr_y in used_chrs.keys():
-            if used_chrs[chr_y][1] in ['All', 'chrMT']:
+            if used_chrs[chr_y][1] == 'All':
                 continue
             c1=min(chr_x,chr_y)
             c2=max(chr_x,chr_y)
@@ -596,8 +594,9 @@ def hic2cool(norm, infile, unit, binsize, outfile):
                 continue
             parse_hic(norm, req, used_chrs[c1], used_chrs[c2], unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map)
     req.close()
-    with h5py.File(outfile, 'w') as h5file:
-        write_cool(h5file, used_chrs, binsize, bin_map, count_map)
+    h5file = h5py.File(outfile, 'w')
+    write_cool(h5file, used_chrs, binsize, bin_map, count_map)
+    h5file.close()
 
 
 def main(args):
