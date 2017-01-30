@@ -15,6 +15,6 @@ $ pip install h5py numpy
 
 Usage of the converter is:
 ```
-$ python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp>
+$ python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <boolean to include normalization or not>
 ```
-If an invalid bin size is given (i.e. one that does not correspond to a cooler resolution, the program will terminate and prompt you to enter a valid one)
+If an invalid bin size is given (i.e. one that does not correspond to a cooler resolution, the program will terminate and prompt you to enter a valid one). To include normalization values from the hic file, the argument must be True, T or true. To ignore normalization, enter False, F, false, or omit the last argument.

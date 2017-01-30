@@ -10,9 +10,10 @@
 # The cooler file writing was based off of much of the CLI code contained in
 # this repo: https://github.com/mirnylab/cooler.
 
-# Usage of the converter is: python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp>
+# Usage of the converter is: python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <include normalization?>
 # If an invalid bin size is given (i.e. one that does not correspond to a cooler resolution,
 # the program will terminate and prompt you to enter a valid one)
+# See the README or main() function in this file for more usage information.
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 import sys
@@ -398,7 +399,7 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
     covered_chr_pairs.append(chr_key)
 
 
-def write_cool(h5file, chr_info, binsize, bin_map, count_map):
+def write_cool(outfile, chr_info, binsize, bin_map, count_map, norm):
     """
     Use various information to write a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
@@ -406,13 +407,14 @@ def write_cool(h5file, chr_info, binsize, bin_map, count_map):
     http://cooler.readthedocs.io/en/latest/datamodel.html
     """
     # default options specified by cooler
+    h5file = h5py.File(outfile, 'w')
     h5opts = dict(compression='gzip', compression_opts=6)
     grp = h5file.create_group('chroms')
     chr_names = write_chroms(grp, chr_info, h5opts)
     # create the 'bins' table required by cooler_root
     bin_table, chr_offsets, by_chr_offset_map = create_bins(chr_info, binsize, bin_map)
     grp = h5file.create_group('bins')
-    write_bins(grp, chr_names, bin_table, h5opts)
+    write_bins(grp, chr_names, bin_table, h5opts, norm)
     pixels_table, bin1_offsets = create_pixels(count_map, by_chr_offset_map, len(bin_table))
     grp = h5file.create_group('pixels')
     write_pixels(grp, pixels_table, h5opts)
@@ -426,6 +428,7 @@ def write_cool(h5file, chr_info, binsize, bin_map, count_map):
     info['bin-type'] = 'fixed'
     info['bin-size'] = binsize
     h5file.attrs.update(info)
+    h5file.close()
 
 
 def write_chroms(grp, chrs, h5opts):
@@ -474,10 +477,11 @@ def create_bins(chrs, binsize, bin_map):
     return np.array(bins_array), np.array(offsets), by_chr_offsets
 
 
-def write_bins(grp, chroms, bins, h5opts):
+def write_bins(grp, chroms, bins, h5opts, norm):
     """
     Write the bins table, which has columns: chrom, start (in bp), end (in bp),
     and weight (float). Chrom is an index which corresponds to the chroms table.
+    Only writes weight column if norm != "NONE"
     """
     n_chroms = len(chroms)
     n_bins = len(bins)
@@ -491,7 +495,8 @@ def write_bins(grp, chroms, bins, h5opts):
     grp.create_dataset('chrom', shape=(n_bins,), dtype=enum_dtype, data=chrom_ids, **h5opts)
     grp.create_dataset('start',  shape=(n_bins,), dtype=np.int32, data=starts, **h5opts)
     grp.create_dataset('end', shape=(n_bins,), dtype=np.int32, data=ends, **h5opts)
-    grp.create_dataset('weight', shape=(n_bins,), dtype=np.float64, data=weights, **h5opts)
+    if norm != "NONE":
+        grp.create_dataset('weight', shape=(n_bins,), dtype=np.float64, data=weights, **h5opts)
 
 
 def create_pixels(count_map, by_chr_offset_map, n_bins):
@@ -594,28 +599,37 @@ def hic2cool(norm, infile, unit, binsize, outfile):
                 continue
             parse_hic(norm, req, used_chrs[c1], used_chrs[c2], unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map)
     req.close()
-    h5file = h5py.File(outfile, 'w')
-    write_cool(h5file, used_chrs, binsize, bin_map, count_map)
-    h5file.close()
+    write_cool(outfile, used_chrs, binsize, bin_map, count_map, norm)
 
 
 def main(args):
     """
     Execute the program
     Args are:
-    python hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)>
+    python hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <optional: include hic normalization (True or False)>
     """
-    if len(args) != 4:
-        print('ERROR. There is a problem with the args provided.\nUsage is: <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> ')
+    if len(args) != 4 and len(args) != 5:
+        print('ERROR. There is a problem with the args provided.\nUsage is: <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <optional: include hic normalization (True or False)>')
         sys.exit()
     try:
         binsize= int(args[3])
     except ValueError:
         print('ERROR. Bin size provided must be an integer')
         sys.exit()
+    # boolean for normalization check
+    if len(args) == 5:
+        if args[4] in ['True', 'T', 'true']:
+            norm = 'KR'
+        elif args[4] in ['False', 'F', 'false']:
+            norm = 'NONE'
+        else:
+            print('ERROR. Include normalization value must be True or False')
+            sys.exit()
+    else:
+        norm = 'NONE'
     # these parameters adapted from theaidenlab/straw
-    # KR is default normalization type and BP is the unit for binsize
-    hic2cool('KR', args[1], 'BP', binsize, args[2])
+    # KR/NONE is default normalization type and BP is the unit for binsize
+    hic2cool(norm, args[1], 'BP', binsize, args[2])
 
 
 if __name__ == '__main__':
