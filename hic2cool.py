@@ -380,8 +380,16 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
             y=rec['binY']
             c=rec['counts']
             if (norm != "NONE"):
-                nX = 1/c1Norm[rec['binX']]
-                nY = 1/c2Norm[rec['binY']]
+                normBinX = c1Norm[x]
+                normBinY = c2Norm[y]
+                if normBinX != 0.0:
+                    nX = 1/normBinX
+                else:
+                    nX = 'inf'
+                if normBinY != 0.0:
+                    nY = 1/normBinY
+                else:
+                    nY = 'inf'
             else:
                 nX = 1.0
                 nY = 1.0
@@ -606,10 +614,10 @@ def main(args):
     """
     Execute the program
     Args are:
-    python hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <optional: include hic normalization (True or False)>
+    python hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>
     """
     if len(args) != 4 and len(args) != 5:
-        print('ERROR. There is a problem with the args provided.\nUsage is: <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <optional: include hic normalization (True or False)>')
+        print('ERROR. There is a problem with the args provided.\nUsage is: <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>')
         sys.exit()
     try:
         binsize= int(args[3])
@@ -618,17 +626,15 @@ def main(args):
         sys.exit()
     # boolean for normalization check
     if len(args) == 5:
-        if args[4] in ['True', 'T', 'true']:
-            norm = 'KR'
-        elif args[4] in ['False', 'F', 'false']:
-            norm = 'NONE'
+        if args[4] in ['KR', 'VC', 'VC_SQRT', 'NONE']:
+            norm = args[4]
         else:
-            print('ERROR. Include normalization value must be True or False')
+            print('ERROR. Included normalization value must be KR, VC, VC_SQRT, or NONE')
             sys.exit()
     else:
-        norm = 'NONE'
+        norm = 'KR'
     # these parameters adapted from theaidenlab/straw
-    # KR/NONE is default normalization type and BP is the unit for binsize
+    # KR is default normalization type and BP is the unit for binsize
     hic2cool(norm, args[1], 'BP', binsize, args[2])
 
 
