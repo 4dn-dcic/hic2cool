@@ -402,8 +402,9 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
                     count_map[c1_key] = {}
                 if c2_key in count_map[c1_key].keys():
                     print('\nWARNING: multiple count entries found for the following pixel\n', c1_key, ' and ', c2_key, '   (in form chrom_idx:bin)\n')
-                    print('c1:  ', str(c1)+':'+str(x*binsize)+'|'+str(c2)+':'+str(y*binsize),' -->  old:', count_map[c1_key][c2_key], 'new: ',c)
-                count_map[c1_key][c2_key] = c
+                    print('c1:  ', str(c1)+':'+str(x*binsize)+'|'+str(c2)+':'+str(y*binsize),'. Conflicting count found: ', c, '. Will use: ', count_map[c1_key][c2_key])
+                else:
+                    count_map[c1_key][c2_key] = c
     covered_chr_pairs.append(chr_key)
 
 
