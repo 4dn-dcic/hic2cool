@@ -278,7 +278,7 @@ def read_block(req, blockNumber, blockMap):
             w = struct.unpack('<h',uncompressedBytes[temp:(temp+2)])[0]
             temp=temp+2
             for i in range(nPts):
-                row=i/w
+                row=int(i/w)
                 col=i-row*w
                 bin1=int(binXOffset+col)
                 bin2=int(binYOffset+row)
@@ -363,6 +363,11 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
         regionIndices.append(int(c1pos2/binsize))
         regionIndices.append(int(c2pos1/binsize))
         regionIndices.append(int(c2pos2/binsize))
+    try:
+        pair_footer_info[chr_key]
+    except KeyError:
+        print('ERROR: there is a discrepancy between the chrs declared in the infile header and the actual information it contains.\nThe intersection between ', chr1[1], ' and ', chr2[1], 'could not be found in the file.')
+        return
     myFilePos=pair_footer_info[chr_key]
     if (norm != "NONE"):
         c1Norm = read_normalization_vector(req, chr_footer_info[c1])
