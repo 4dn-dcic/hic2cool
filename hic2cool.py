@@ -24,6 +24,8 @@ import h5py
 import math
 from collections import OrderedDict
 
+### global version number ###
+hic2cool_version = '0.0.1'
 
 #read function
 def readcstr(f):
@@ -62,6 +64,7 @@ def read_header(infile):
     while (c != b'\0'):
         genome += c
         c=req.read(1)
+    genome = genome.decode('ascii')
     nattributes = struct.unpack('<i',req.read(4))[0]
     for x in range(nattributes):
         key = readcstr(req)
@@ -71,7 +74,7 @@ def read_header(infile):
         name = readcstr(req)
         length = struct.unpack('<i',req.read(4))[0]
         if name and length:
-            formatted_name = 'chr' + name if name != 'All' else name
+            formatted_name = 'chr' + name if (name != 'All' and 'chr' not in name) else name
             formatted_name = 'chrM' if formatted_name == 'chrMT' else formatted_name
             chrs[i] = [i, formatted_name, length]
     nBpRes = struct.unpack('<i',req.read(4))[0]
@@ -79,7 +82,7 @@ def read_header(infile):
     for x in range(0, nBpRes):
       res = struct.unpack('<i',req.read(4))[0]
       resolutions.append(res)
-    return req, chrs, resolutions, masterindex
+    return req, chrs, resolutions, masterindex, genome
 
 
 def read_footer(req, master, norm, unit, resolution):
@@ -413,7 +416,7 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
     covered_chr_pairs.append(chr_key)
 
 
-def write_cool(outfile, chr_info, binsize, bin_map, count_map, norm):
+def write_cool(outfile, chr_info, binsize, bin_map, count_map, norm, genome):
     """
     Use various information to write a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
@@ -441,6 +444,9 @@ def write_cool(outfile, chr_info, binsize, bin_map, count_map, norm):
     info['nnz'] = len(pixels_table)
     info['bin-type'] = 'fixed'
     info['bin-size'] = binsize
+    info['format'] = 'HDF5::Cooler'
+    info['generated-by'] = 'hic2cool-' + hic2cool_version
+    info['genome-assembly'] = genome
     h5file.attrs.update(info)
     h5file.close()
 
@@ -592,7 +598,7 @@ def hic2cool(norm, infile, unit, binsize, outfile):
     """
     bin_map = {}
     count_map = {}
-    req, used_chrs, resolutions, masteridx = read_header(infile)
+    req, used_chrs, resolutions, masteridx, genome = read_header(infile)
     # ensure user input binsize is a resolution supported by the hic file
     if binsize not in resolutions:
         print('ERROR. Given binsize (in bp) is not a supported resolution in this file.\nPlease use one of: ', resolutions)
@@ -613,7 +619,7 @@ def hic2cool(norm, infile, unit, binsize, outfile):
                 continue
             parse_hic(norm, req, used_chrs[c1], used_chrs[c2], unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map)
     req.close()
-    write_cool(outfile, used_chrs, binsize, bin_map, count_map, norm)
+    write_cool(outfile, used_chrs, binsize, bin_map, count_map, norm, genome)
 
 
 def main(args):
