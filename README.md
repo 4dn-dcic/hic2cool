@@ -5,7 +5,12 @@ Originally published 1/26/17.
 
 This code was originally based off of the straw project by Neva C. Durand and Yue Wu (https://github.com/theaidenlab/straw). The cooler file writing was based off of much of the CLI code contained in this repo: https://github.com/mirnylab/cooler.
 
-The following Python packages are required and can both be installed using pip:
+This package is pip-installable:
+```
+$ pip install hic2cool
+```
+
+Or you can use the script directly. The following Python packages are required and can both be installed using pip:
 
 **h5py**
 **numpy**

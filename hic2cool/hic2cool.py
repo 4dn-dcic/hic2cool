@@ -23,9 +23,7 @@ import numpy as np
 import h5py
 import math
 from collections import OrderedDict
-
-### global version number ###
-hic2cool_version = '0.0.1'
+from _version import __version__
 
 #read function
 def readcstr(f):
@@ -445,7 +443,7 @@ def write_cool(outfile, chr_info, binsize, bin_map, count_map, norm, genome):
     info['bin-type'] = 'fixed'
     info['bin-size'] = binsize
     info['format'] = 'HDF5::Cooler'
-    info['generated-by'] = 'hic2cool-' + hic2cool_version
+    info['generated-by'] = 'hic2cool-' + __version__
     info['genome-assembly'] = genome
     h5file.attrs.update(info)
     h5file.close()
