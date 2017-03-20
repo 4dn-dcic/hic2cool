@@ -2,17 +2,13 @@
 # Test code for hic2cool
 # Requires pip installation of cooler to run
 # Must be run from this directory (./test)
-
-# temp
-import sys
-sys.path.insert(0, '/Users/carl/Documents/GitHub/hic2cool/hic2cool')
+# Also, you MUST unzip test_data/test_hic.hic before running
+# (`gunzip test_data/test_hic.hic`)
 
 import unittest
 import hic2cool
 import cooler
 import os
-import codecs
-import numpy as np
 
 
 class TestRunHic(unittest.TestCase):
@@ -24,6 +20,7 @@ class TestRunHic(unittest.TestCase):
         # can take 10 to 15 mins to run locally
         hic2cool.hic2cool('KR', self.infile_name, 'BP', self.binsize, self.outfile_name)
         self.assertTrue(os.path.isfile(self.outfile_name))
+
 
 class TestWithCooler(unittest.TestCase):
     outfile_name = 'test_data/test_cool.cool'
