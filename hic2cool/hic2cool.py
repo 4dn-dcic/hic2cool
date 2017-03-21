@@ -10,7 +10,7 @@
 # The cooler file writing was based off of much of the CLI code contained in
 # this repo: https://github.com/mirnylab/cooler.
 
-# Usage of the converter is: python run_hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <include normalization?>
+# Usage of the converter is: python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <include normalization?>
 # If an invalid bin size is given (i.e. one that does not correspond to a cooler resolution,
 # the program will terminate and prompt you to enter a valid one)
 # See the README or main() function in this file for more usage information.
@@ -632,9 +632,9 @@ def hic2cool_convert(infile, outfile, binsize, norm='KR'):
 
 def main(args):
     """
-    Execute the program
+    Execute the program from the command line
     Args are:
-    python run_hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>
+    python hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>
     """
     if len(args) != 4 and len(args) != 5:
         print('ERROR. There is a problem with the args provided.\nUsage is: <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>')

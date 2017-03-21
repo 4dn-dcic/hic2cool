@@ -5,7 +5,8 @@
 
 
 import unittest
-import hic2cool
+from hic2cool import hic2cool_convert
+from hic2cool import __version__
 import cooler
 import os
 import warnings
@@ -20,7 +21,7 @@ class TestRunHic(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             # this should trigger a warning, because test file is missing chrMT
-            hic2cool.hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
+            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
             # verify some things about the warning
             assert len(w) == 49
             assert issubclass(w[-1].category, UserWarning)
@@ -30,7 +31,6 @@ class TestRunHic(unittest.TestCase):
 class TestWithCooler(unittest.TestCase):
     outfile_name = 'test_data/test_cool.cool'
     binsize = 250000
-    hic2cool_version = open('../hic2cool/_version.py').readlines()[-1].split()[-1].strip("\"'")
 
     def test_cooler(self):
         cool = cooler.Cooler(self.outfile_name)
@@ -38,7 +38,7 @@ class TestWithCooler(unittest.TestCase):
         self.assertEqual(self.outfile_name, cool_file)
         # cooler info has 8 entries
         self.assertEqual(len(cool.info), 8)
-        self.assertTrue(self.hic2cool_version in cool.info['generated-by'])
+        self.assertTrue(__version__ in cool.info['generated-by'])
         self.assertEqual(len(cool.chromnames), 25)
         self.assertEqual(self.binsize, cool.info['bin-size'])
         matrix_res = cool.matrix().fetch('chr1:25000000-25250000')
