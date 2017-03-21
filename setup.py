@@ -12,14 +12,16 @@ requires = [
     'numpy'
 ]
 
+this_version = open("hic2cool/_version.py").readlines()[-1].split()[-1].strip("\"'")
+
 setup(
     name = "hic2cool",
-    version = open("hic2cool/_version.py").readlines()[-1].split()[-1].strip("\"'"),
+    version = this_version,
     description = """
         CLI for a converter between .hic files (from juicer) and .cool files (for cooler). Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this is a stand-alone Python file written by Carl Vitzthum and directed by Soo Lee of the HMS DBMI Park lab.
         """,
     url = "https://github.com/4dn-dcic/hic2cool",
-    download_url = "https://github.com/4dn-dcic/hic2cool/tarball/" + version,
+    download_url = "https://github.com/4dn-dcic/hic2cool/tarball/" + this_version,
     author = "Carl Vitzthum",
     author_email = "carl.vitzthum@gmail.com",
     license = "MIT",
