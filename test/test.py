@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 # Test code for hic2cool
 # Requires pip installation of cooler to run
-# Must be run from this directory (./test)
-# Also, you MUST unzip test_data/test_hic.hic before running
-# (`gunzip test_data/test_hic.hic`)
+# Must be run from this directory (/hic2cool/test/)
+
 
 import unittest
 import hic2cool
 import cooler
 import os
+import warnings
 
 
 class TestRunHic(unittest.TestCase):
@@ -17,8 +17,13 @@ class TestRunHic(unittest.TestCase):
     binsize = 250000
 
     def test_run(self):
-        # can take 10 to 15 mins to run locally
-        hic2cool.hic2cool('KR', self.infile_name, 'BP', self.binsize, self.outfile_name)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            # this should trigger a warning, because test file is missing chrMT
+            hic2cool.hic2cool('KR', self.infile_name, 'BP', self.binsize, self.outfile_name)
+            # verify some things about the warning
+            assert len(w) == 49
+            assert issubclass(w[-1].category, UserWarning)
         self.assertTrue(os.path.isfile(self.outfile_name))
 
 
@@ -36,9 +41,9 @@ class TestWithCooler(unittest.TestCase):
         self.assertTrue(self.hic2cool_version in cool.info['generated-by'])
         self.assertEqual(len(cool.chromnames), 25)
         self.assertEqual(self.binsize, cool.info['bin-size'])
-        matrix_res = cool.matrix().fetch('chr17:25260000-25265000')
+        matrix_res = cool.matrix().fetch('chr1:25000000-25250000')
         self.assertEqual(matrix_res.shape, (1,1))
-        self.assertEqual(matrix_res[0][0], 79.0)
+        self.assertEqual(matrix_res[0][0], 4.0)
 
 
 if __name__ == '__main__':
