@@ -10,7 +10,7 @@
 # The cooler file writing was based off of much of the CLI code contained in
 # this repo: https://github.com/mirnylab/cooler.
 
-# Usage of the converter is: python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <include normalization?>
+# Usage of the converter is: python run_hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <include normalization?>
 # If an invalid bin size is given (i.e. one that does not correspond to a cooler resolution,
 # the program will terminate and prompt you to enter a valid one)
 # See the README or main() function in this file for more usage information.
@@ -592,12 +592,18 @@ def write_indexes(grp, chr_offsets, bin1_offsets, h5opts):
     grp.create_dataset('bin1_offset',  shape=(len(bin1_offsets),), dtype=np.int32, data=bin1_offsets, **h5opts)
 
 
-def hic2cool(norm, infile, unit, binsize, outfile):
+def hic2cool_convert(infile, outfile, binsize, norm='KR'):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
     Opens outfile and writes in form of .cool file
+    Params:
+    <infile> str .hic filename
+    <outfile> str .cool output filename
+    <binsize> int bp bin size
+    <norm> str normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT
     """
+    unit='BP' # only using base pair unit for now
     bin_map = {}
     count_map = {}
     req, used_chrs, resolutions, masteridx, genome = read_header(infile)
@@ -628,7 +634,7 @@ def main(args):
     """
     Execute the program
     Args are:
-    python hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>
+    python run_hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>
     """
     if len(args) != 4 and len(args) != 5:
         print('ERROR. There is a problem with the args provided.\nUsage is: <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>')
@@ -649,7 +655,7 @@ def main(args):
         norm = 'KR'
     # these parameters adapted from theaidenlab/straw
     # KR is default normalization type and BP is the unit for binsize
-    hic2cool(norm, args[1], 'BP', binsize, args[2])
+    hic2cool_convert(args[1], args[2], binsize, norm)
 
 
 if __name__ == '__main__':

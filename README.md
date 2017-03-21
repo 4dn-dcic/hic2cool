@@ -10,6 +10,8 @@ This package is pip-installable:
 $ pip install hic2cool
 ```
 
+Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as run_hic2cool.py, which is described slightly later.
+
 Or you can use the script directly. The following Python packages are required and can both be installed using pip:
 
 **h5py**
@@ -20,6 +22,6 @@ $ pip install h5py numpy
 
 Usage of the converter is:
 ```
-$ python hic2cool/hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <normalization type (defaults to KR)>
+$ python hic2cool/run_hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <normalization type (defaults to KR)>
 ```
 If an invalid bin size is given (i.e. one that does not correspond to a cooler resolution, the program will terminate and prompt you to enter a valid one). Normalization type defaults to KR if not provided, but may also be one of: VC, VC_SQRT, or NONE.

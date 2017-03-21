@@ -20,7 +20,7 @@ class TestRunHic(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             # this should trigger a warning, because test file is missing chrMT
-            hic2cool.hic2cool('KR', self.infile_name, 'BP', self.binsize, self.outfile_name)
+            hic2cool.hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
             # verify some things about the warning
             assert len(w) == 49
             assert issubclass(w[-1].category, UserWarning)
