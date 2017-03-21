@@ -26,7 +26,7 @@ setup(
     keywords = ["bioinformatics", "genomics", "hi-c", "juicer", "cooler", "contact-matrix", "file-format"],
     packages = ['hic2cool'],
     install_requires = requires,
-    test_require = ['cooler']
+    test_require = ['cooler'],
     test_suite = "test",
     extras_require={
         'test': tests_require,
