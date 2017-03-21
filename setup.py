@@ -12,6 +12,10 @@ requires = [
     'numpy'
 ]
 
+tests_require = [
+    'cooler'
+]
+
 this_version = open("hic2cool/_version.py").readlines()[-1].split()[-1].strip("\"'")
 
 setup(
