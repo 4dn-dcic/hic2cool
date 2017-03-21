@@ -22,8 +22,11 @@ import zlib
 import numpy as np
 import h5py
 import math
+import warnings
 from collections import OrderedDict
 from _version import __version__
+
+warnings.simplefilter('error', UserWarning)
 
 #read function
 def readcstr(f):
@@ -367,7 +370,8 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
     try:
         pair_footer_info[chr_key]
     except KeyError:
-        print('ERROR: there is a discrepancy between the chrs declared in the infile header and the actual information it contains.\nThe intersection between ', chr1[1], ' and ', chr2[1], 'could not be found in the file.')
+        warn_string = 'ERROR: there is a discrepancy between the chrs declared in the infile header and the actual information it contains.\nThe intersection between ' + chr1[1] + ' and ' + chr2[1] + ' could not be found in the file.'
+        warnings.warn(warn_string)
         return
     myFilePos=pair_footer_info[chr_key]
     if (norm != "NONE"):
