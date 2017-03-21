@@ -24,7 +24,7 @@ import h5py
 import math
 import warnings
 from collections import OrderedDict
-from _version import __version__
+from hic2cool._version import __version__
 
 warnings.simplefilter('error', UserWarning)
 
