@@ -10,7 +10,9 @@
 # The cooler file writing was based off of much of the CLI code contained in
 # this repo: https://github.com/mirnylab/cooler.
 
-# Usage of the converter is: python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <include normalization?>
+# The most import method is hic2cool_convert, which can be imported if the package is pip installed.
+
+# Usage on the command line is: python hic2cool.py <.hic infile> <.cool outfile> <bin size in bp> <include normalization?>
 # If an invalid bin size is given (i.e. one that does not correspond to a cooler resolution,
 # the program will terminate and prompt you to enter a valid one)
 # See the README or main() function in this file for more usage information.

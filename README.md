@@ -10,7 +10,11 @@ This package is pip-installable:
 $ pip install hic2cool
 ```
 
-Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described at the bottom of this README.
+Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described at the bottom of this README. Example usage in a Python script is shown below or in /test/test.py.
+```
+from hic2cool import hic2cool_convert
+hic2cool_convert(<infile.hic>, <outfile.cool>, <integer bin size>, <normalization type>)
+```
 
 Or you can use the script directly. The following Python packages are required and can both be installed using pip:
 
