@@ -1,5 +1,0 @@
-h5py
-numpy
-
-[test]
-cooler
