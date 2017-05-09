@@ -24,11 +24,10 @@ import zlib
 import numpy as np
 import h5py
 import math
-import warnings
+import argparse
 from collections import OrderedDict
-from hic2cool._version import __version__
+from _version import __version__
 
-warnings.simplefilter('error', UserWarning)
 
 #read function
 def readcstr(f):
@@ -322,7 +321,7 @@ def read_normalization_vector(req, entry):
     return value
 
 
-def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map):
+def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map):
     """
     Adapted from the straw() function in the original straw package.
     Mainly, since all chroms are iterated over, the read_header and read_footer
@@ -335,11 +334,11 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
     blockMap = {}
     magic_string = ""
     if (not (norm=="NONE" or norm=="VC" or norm=="VC_SQRT" or norm=="KR")):
-        print("Norm specified incorrectly, must be one of <NONE/VC/VC_SQRT/KR>\nUsage: straw <NONE/VC/VC_SQRT/KR> <hicFile(s)> <chr1>[:x1:x2] <chr2>[:y1:y2] <BP/FRAG> <binsize>\n")
-        return -1
+        print("Norm specified incorrectly, must be one of <NONE/VC/VC_SQRT/KR>")
+        force_exit(warn_string, req, h5file)
     if (not (unit=="BP" or unit=="FRAG")):
-        print("Unit specified incorrectly, must be one of <BP/FRAG>\nUsage: straw <NONE/VC/VC_SQRT/KR> <hicFile(s)> <chr1>[:x1:x2] <chr2>[:y1:y2] <BP/FRAG> <binsize>\n")
-        return -1
+        print("Unit specified incorrectly, must be one of <BP/FRAG>")
+        force_exit(warn_string, req, h5file)
     chr1ind=chr1[0]
     chr2ind=chr2[0]
     c1pos1=0
@@ -372,9 +371,8 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
     try:
         pair_footer_info[chr_key]
     except KeyError:
-        warn_string = 'ERROR: there is a discrepancy between the chrs declared in the infile header and the actual information it contains.\nThe intersection between ' + chr1[1] + ' and ' + chr2[1] + ' could not be found in the file.'
-        warnings.warn(warn_string)
-        return
+        warn_string = ('ERROR. There is a discrepancy between the chrs declared in the infile header and the actual information it contains.\nThe intersection between ' + chr1[1] + ' and ' + chr2[1] + ' could not be found in the file.')
+        force_exit(warn_string, req, h5file)
     myFilePos=pair_footer_info[chr_key]
     if (norm != "NONE"):
         c1Norm = read_normalization_vector(req, chr_footer_info[c1])
@@ -410,9 +408,9 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
                 c2_key = str(c2) + ":" + str(y)
                 bin_map[c1_key] = nX
                 bin_map[c2_key] = nY
-                if c1_key not in count_map.keys():
+                if c1_key not in count_map:
                     count_map[c1_key] = {}
-                if c2_key in count_map[c1_key].keys():
+                if c2_key in count_map[c1_key]:
                     print('\nWARNING: multiple count entries found for the following pixel\n', c1_key, ' and ', c2_key, '   (in form chrom_idx:bin)\n')
                     print('c1:  ', str(c1)+':'+str(x*binsize)+'|'+str(c2)+':'+str(y*binsize),'. Conflicting count found: ', c, '. Will use: ', count_map[c1_key][c2_key])
                 else:
@@ -420,28 +418,27 @@ def parse_hic(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, pair_foot
     covered_chr_pairs.append(chr_key)
 
 
-def write_cool(outfile, chr_info, binsize, bin_map, count_map, norm, genome):
+def write_cool(h5res, chr_info, binsize, bin_map, count_map, norm, genome):
     """
     Use various information to write a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
     For an in-depth explanation of the data structure, please see:
     http://cooler.readthedocs.io/en/latest/datamodel.html
     """
-    # default options specified by cooler
-    h5file = h5py.File(outfile, 'w')
+    h5res_level = h5res.create_group(str(binsize))
+    grp = h5res_level.create_group('chroms')
     h5opts = dict(compression='gzip', compression_opts=6)
-    grp = h5file.create_group('chroms')
     chr_names = write_chroms(grp, chr_info, h5opts)
     # create the 'bins' table required by cooler_root
     bin_table, chr_offsets, by_chr_offset_map = create_bins(chr_info, binsize, bin_map)
-    grp = h5file.create_group('bins')
+    grp = h5res_level.create_group('bins')
     write_bins(grp, chr_names, bin_table, h5opts, norm)
     pixels_table, bin1_offsets = create_pixels(count_map, by_chr_offset_map, len(bin_table))
-    grp = h5file.create_group('pixels')
+    grp = h5res_level.create_group('pixels')
     write_pixels(grp, pixels_table, h5opts)
-    grp = h5file.create_group('indexes')
+    grp = h5res_level.create_group('indexes')
     write_indexes(grp, chr_offsets, bin1_offsets, h5opts)
-    # update info attributes of the h5file
+    # update info attributes of the h5res_level
     info = {}
     info['nchroms'] = len(chr_names)
     info['nbins'] = len(bin_table)
@@ -451,8 +448,8 @@ def write_cool(outfile, chr_info, binsize, bin_map, count_map, norm, genome):
     info['format'] = 'HDF5::Cooler'
     info['generated-by'] = 'hic2cool-' + __version__
     info['genome-assembly'] = genome
-    h5file.attrs.update(info)
-    h5file.close()
+    h5res_level.attrs.update(info)
+
 
 
 def write_chroms(grp, chrs, h5opts):
@@ -479,7 +476,7 @@ def create_bins(chrs, binsize, bin_map):
     bins_array = []
     offsets = [0]
     by_chr_offsets = {}
-    for c_idx in chrs.keys():
+    for c_idx in chrs:
         chr_name = chrs[c_idx][1]
         if chr_name == 'All':
             continue
@@ -490,13 +487,13 @@ def create_bins(chrs, binsize, bin_map):
             if bin_end > chr_size:
                 bin_end = chr_size
             weight_key = str(chrs[c_idx][0]) + ':' + str(math.ceil(bin_start/binsize))
-            weight = bin_map[weight_key] if weight_key in bin_map.keys() else 1.0
+            weight = bin_map[weight_key] if weight_key in bin_map else 1.0
             bins_array.append([chr_name, bin_start, bin_end, weight])
             bin_start = bin_end
         # offsets are the number of bins of all chromosomes prior to this one
         # by_chr_offsets are bin offsets for each chromosome, indexed by chr_idx
         by_chr_offsets[chrs[c_idx][0]] = offsets[-1]
-        if len(offsets) < len(chrs.keys()):
+        if len(offsets) < len(chrs):
             offsets.append(math.ceil(chr_size/binsize) + offsets[-1])
     return np.array(bins_array), np.array(offsets), by_chr_offsets
 
@@ -544,7 +541,7 @@ def create_pixels(count_map, by_chr_offset_map, n_bins):
     pixel_2d_array = []
     bin1_offsets = []
     # order count_map by bin2 then bin1
-    for key in count_map.keys():
+    for key in count_map:
         # turn inner bin2 keys from chr_key to bin number
         converted_bin2 = {chr_key_to_bin(k, by_chr_offset_map): v for k,v in count_map[key].items()}
         # order them by bin number
@@ -594,7 +591,7 @@ def write_indexes(grp, chr_offsets, bin1_offsets, h5opts):
     grp.create_dataset('bin1_offset',  shape=(len(bin1_offsets),), dtype=np.int32, data=bin1_offsets, **h5opts)
 
 
-def hic2cool_convert(infile, outfile, binsize, norm='KR'):
+def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -602,63 +599,72 @@ def hic2cool_convert(infile, outfile, binsize, norm='KR'):
     Params:
     <infile> str .hic filename
     <outfile> str .cool output filename
-    <binsize> int bp bin size
+    <resolution> int bp bin size. If 0, use all. Defaults to 0.
     <norm> str normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT
+    <exclude_MT> bool. If True, ignore MT contacts. Defaults to False.
     """
     unit='BP' # only using base pair unit for now
-    bin_map = {}
-    count_map = {}
     req, used_chrs, resolutions, masteridx, genome = read_header(infile)
+    if exclude_MT: # remove chr25, which is MT, if this flag is set
+        used_chrs.pop(25, None)
+    h5file = h5py.File(outfile, 'w')
+    h5res = h5file.create_group('resolutions')
     # ensure user input binsize is a resolution supported by the hic file
-    if binsize not in resolutions:
-        print('ERROR. Given binsize (in bp) is not a supported resolution in this file.\nPlease use one of: ', resolutions)
-        sys.exit()
-    req, pair_footer_info, chr_footer_info = read_footer(req, masteridx, norm, unit, binsize)
-    covered_chr_pairs = []
-    for chr_x in used_chrs.keys():
-        if used_chrs[chr_x][1] == 'All':
-            continue
-        for chr_y in used_chrs.keys():
-            if used_chrs[chr_y][1] == 'All':
+    if resolution != 0 and resolution not in resolutions:
+        error_str = ('ERROR. Given binsize (in bp) is not a supported resolution in this file.\nPlease use 0 (all resolutions) or use one of: ' + resolutions)
+        force_exit(error_str, req, h5file)
+    use_resolutions = resolutions if resolution == 0 else [resolution]
+    for binsize in use_resolutions:
+        bin_map = {}
+        count_map = {}
+        req, pair_footer_info, chr_footer_info = read_footer(req, masteridx, norm, unit, binsize)
+        covered_chr_pairs = []
+        for chr_x in used_chrs:
+            if used_chrs[chr_x][1] == 'All':
                 continue
-            c1=min(chr_x,chr_y)
-            c2=max(chr_x,chr_y)
-            # ensure this is true
-            # since matrices are upper triangular, no need to cover c1-c2 and c2-c1 reciprocally
-            if str(c1) + "_" + str(c2) in covered_chr_pairs:
-                continue
-            parse_hic(norm, req, used_chrs[c1], used_chrs[c2], unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map)
+            for chr_y in used_chrs:
+                if used_chrs[chr_y][1] == 'All':
+                    continue
+                c1=min(chr_x,chr_y)
+                c2=max(chr_x,chr_y)
+                # ensure this is true
+                # since matrices are upper triangular, no need to cover c1-c2 and c2-c1 reciprocally
+                if str(c1) + "_" + str(c2) in covered_chr_pairs:
+                    continue
+                parse_hic(norm, req, h5file, used_chrs[c1], used_chrs[c2], unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map)
+        write_cool(h5res, used_chrs, binsize, bin_map, count_map, norm, genome)
     req.close()
-    write_cool(outfile, used_chrs, binsize, bin_map, count_map, norm, genome)
+    h5file.close()
 
 
-def main(args):
+def force_exit(message, req, h5file):
+    """
+    Exit the program due to some error. Print out message and close the given
+    input files.
+    """
+    req.close()
+    h5file.close()
+    print(message, file=sys.stderr)
+    sys.exit()
+
+
+def main():
     """
     Execute the program from the command line
     Args are:
-    python hic2cool.py <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>
+    python hic2cool.py <infile (.hic)> <outfile (.cool)> <resolutions desired (defaults to all, optionally bp int)> <normalization type (defaults to 'KR', optionally 'NONE', 'VC', or 'VC_SQRT')> <exclude MT (default False)>
     """
-    if len(args) != 4 and len(args) != 5:
-        print('ERROR. There is a problem with the args provided.\nUsage is: <infile (.hic)> <outfile (.cool)> <bin size in bp (int)> <normalization type (defaults to KR, optionally NONE, VC, or VC_SQRT)>')
-        sys.exit()
-    try:
-        binsize= int(args[3])
-    except ValueError:
-        print('ERROR. Bin size provided must be an integer')
-        sys.exit()
-    # boolean for normalization check
-    if len(args) == 5:
-        if args[4] in ['KR', 'VC', 'VC_SQRT', 'NONE']:
-            norm = args[4]
-        else:
-            print('ERROR. Included normalization value must be KR, VC, VC_SQRT, or NONE')
-            sys.exit()
-    else:
-        norm = 'KR'
+    parser = argparse.ArgumentParser()
+    parser.add_argument("infile", help=".hic input file")
+    parser.add_argument("outfile", help=".cool output file")
+    parser.add_argument("-r", "--resolution",help="integer bp resolution desired in cooler file. Setting to 0 (default) will use all resolutions", type=int, default=0)
+    parser.add_argument("-n", "--normalization", help="string normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT", choices=['KR', 'NONE', 'VC', 'VC_SQRT'], default='KR')
+    parser.add_argument("-e", "--exclude_MT", help="if used, exclude the mitochondria (MT) from the output", action="store_true")
+    args = parser.parse_args()
     # these parameters adapted from theaidenlab/straw
     # KR is default normalization type and BP is the unit for binsize
-    hic2cool_convert(args[1], args[2], binsize, norm)
+    hic2cool_convert(args.infile, args.outfile, args.resolution, args.normalization, args.exclude_MT)
 
 
 if __name__ == '__main__':
-    main(sys.argv)
+    main()
