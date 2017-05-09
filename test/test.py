@@ -3,9 +3,8 @@
 # Requires pip installation of cooler to run
 # Must be run from this directory (/hic2cool/test/)
 
-
-import unittest
 from __future__ import absolute_import, print_function
+import unittest
 from hic2cool import hic2cool_convert
 from hic2cool._version import __version__
 import cooler

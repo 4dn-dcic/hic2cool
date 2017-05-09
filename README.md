@@ -44,5 +44,5 @@ my_cooler = cooler.Cooler(h5file['resolutions/10000'])
 ```
 
 ## Changelog:
-### 0.2.2
+### 0.2.3
 Added multi-resolution format to output cool files. Setup argparse. Improved speed. Added tests for new resolutions format.

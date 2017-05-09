@@ -26,7 +26,7 @@ import h5py
 import math
 import argparse
 from collections import OrderedDict
-from hic2cool._version import __version__
+from _version import __version__
 
 
 #read function
