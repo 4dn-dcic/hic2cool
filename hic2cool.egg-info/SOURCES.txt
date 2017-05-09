@@ -1,0 +1,11 @@
+setup.cfg
+setup.py
+hic2cool/__init__.py
+hic2cool/_version.py
+hic2cool/hic2cool_utils.py
+hic2cool.egg-info/PKG-INFO
+hic2cool.egg-info/SOURCES.txt
+hic2cool.egg-info/dependency_links.txt
+hic2cool.egg-info/requires.txt
+hic2cool.egg-info/top_level.txt
+test/test.py

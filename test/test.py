@@ -5,6 +5,7 @@
 
 
 import unittest
+from __future__ import absolute_import, print_function
 from hic2cool import hic2cool_convert
 from hic2cool._version import __version__
 import cooler
