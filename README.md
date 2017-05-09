@@ -5,7 +5,7 @@ Originally published 1/26/17.
 
 The .hic parsing code is based off the straw project by Neva C. Durand and Yue Wu (https://github.com/theaidenlab/straw). The h5py structure used for .cool file writing is based off code from the cooler repository: https://github.com/mirnylab/cooler.
 
-##Using the Python package
+## Using the Python package
 ```
 $ pip install hic2cool
 ```
@@ -18,7 +18,7 @@ hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional normaliza
 
 Or you can use the script directly. The following Python packages are required and can both be installed using pip:
 
-##Command line converter:
+## Command line converter:
 ```
 $ python hic2cool/hic2cool_utils.py <infile> <outfile> -r <resolution> -n <normalization type> -e
 ```
@@ -29,7 +29,7 @@ Arguments:
 **normalization type** is one of: 'KR', 'NONE', 'VC', or 'VC_SQRT'. Defaults to 'KR'.
 **-e**, or --exclude_MT, ignores the mitochondrial contacts if provided.
 
-##File structure
+## File structure
 All the information for a complete cooler file is stored in each resolution. The hdf5 hierarchy is organized as such:
 File --> 'resolutions' --> '###' (where ### is the resolution in bp).
 Specific resolutions are referenced using a dictionary syntax (i.e. h5File['resolutions']['###'] or h5File['resolutions/###']).
@@ -43,6 +43,6 @@ my_cooler = cooler.Cooler(h5file['resolutions/10000'])
 ### do things with the my_cooler object
 ```
 
-##Changelog:
+## Changelog:
 ### 0.2.1
 Added multi-resolution format to output cool files. Setup argparse. Improved speed. Added tests for new resolutions format.
