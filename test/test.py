@@ -12,7 +12,10 @@ import os
 import h5py
 import sys
 from contextlib import contextmanager
-from StringIO import StringIO
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 
 
 # thanks to Rob Kennedy on S.O. for this bit of code
