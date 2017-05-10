@@ -68,6 +68,7 @@ class TestRunHic(unittest.TestCase):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
             hic2cool_convert(self.infile_name, self.outfile_name_all, 0, self.normalization, True)
+        read_err = err.getvalue().strip()
         self.assertFalse('ERROR' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name_all))
 
@@ -114,7 +115,7 @@ class TestWithCooler(unittest.TestCase):
         self.assertEqual(matrix_res[9][9], 12.74836243)
 
     def test_cooler_multi_res(self):
-        h5file = h5py.File(self.outfile_name2, 'r')
+        h5file = h5py.File(self.outfile_name_all, 'r')
         # since this is multi-res, hdf5 structure is different
         resolutions = h5file['resolutions']
         # expect the following 9 resultions to be present:
@@ -124,12 +125,12 @@ class TestWithCooler(unittest.TestCase):
         res250kb = resolutions['250000']
         cool = cooler.Cooler(res250kb)
         cool_file = cool.filename.encode('utf-8')
-        self.assertEqual(self.outfile_name2.encode('utf-8'), cool_file)
+        self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
         # cooler info has 8 entries
         self.assertEqual(len(cool.info), 8)
         self.assertTrue(__version__ in cool.info['generated-by'])
         self.assertEqual(len(cool.chromnames), 24)
-        self.assertEqual(self.binsize2, cool.info['bin-size'])
+        self.assertEqual(self.binsize, cool.info['bin-size'])
         matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25250000')
         self.assertEqual(matrix_res.shape, (1,1))
         self.assertEqual(matrix_res[0][0], 4)

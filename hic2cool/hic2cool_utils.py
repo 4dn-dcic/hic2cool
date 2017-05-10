@@ -408,6 +408,7 @@ def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs, p
                 # py2 and py3, so round to 12 sig digits
                 normBinX = round_sig_digits(normBinX, 12)
                 normBinY = round_sig_digits(normBinY, 12)
+
                 if normBinX != 0.0:
                     nX = 1/normBinX
                 else:
@@ -622,6 +623,7 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False)
     <exclude_MT> bool. If True, ignore MT contacts. Defaults to False.
     """
     unit='BP' # only using base pair unit for now
+    resolution = int(resolution)
     req, used_chrs, resolutions, masteridx, genome = read_header(infile)
     if exclude_MT: # remove chr25, which is MT, if this flag is set
         used_chrs.pop(25, None)
