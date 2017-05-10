@@ -75,7 +75,7 @@ class TestWithCooler(unittest.TestCase):
         h5file = h5py.File(self.outfile_name, 'r')
         res_data = h5file['resolutions/'+str(self.binsize)]
         cool = cooler.Cooler(res_data)
-        cool_file = cool.filename.encode('utf-8')
+        cool_file = cool.filename.decode('utf-8')
         self.assertEqual(self.outfile_name, cool_file)
         # cooler info has 8 entries
         self.assertEqual(len(cool.info), 8)
@@ -90,7 +90,7 @@ class TestWithCooler(unittest.TestCase):
         h5file = h5py.File(self.outfile_name2, 'r')
         res_data = h5file['resolutions/'+str(self.binsize2)]
         cool = cooler.Cooler(res_data)
-        cool_file = cool.filename.encode('utf-8')
+        cool_file = cool.filename.decode('utf-8')
         self.assertEqual(self.outfile_name2, cool_file)
         # cooler info has 8 entries
         self.assertEqual(len(cool.info), 8)
