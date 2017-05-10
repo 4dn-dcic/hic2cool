@@ -325,6 +325,8 @@ def round_sig_digits(x, sig):
     Round a given float (x) to a given number of significant digits
     """
     str_x = str(x)
+    if not isinstance(x, float):
+        return x
     if '.' in str_x:
         split_on_decimal = str_x.split('.')
         before_decimal = len(split_on_decimal[0])
