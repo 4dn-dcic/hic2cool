@@ -1,0 +1,13 @@
+language: python
+sudo: false
+python:
+- '3.5'
+- '2.7'
+install:
+    - "pip install -r requirements.txt"
+    - "pip3 install -r requirements.txt"
+script:
+ - python setup.py install
+ - python test/test.py
+ - python3 setup.py install
+ - python3 test/test.py
