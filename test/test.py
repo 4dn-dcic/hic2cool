@@ -5,6 +5,7 @@
 
 from __future__ import absolute_import, print_function
 import unittest
+# will only work with pip installed package
 from hic2cool import hic2cool_convert, __version__
 import cooler
 import os
@@ -38,10 +39,10 @@ class TestRunHic(unittest.TestCase):
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
-            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, self.normalization)
+            with self.assertRaises(SystemExit):
+                hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, self.normalization)
         read_err = err.getvalue().strip()
         self.assertTrue('ERROR' in read_err)
-        self.assertFalse(os.path.isfile(self.outfile_name))
 
     def test_run_exclude_MT(self):
         with captured_output() as (out, err):
@@ -62,8 +63,8 @@ class TestRunHic(unittest.TestCase):
         self.assertTrue(os.path.isfile(self.outfile_name))
 
 class TestWithCooler(unittest.TestCase):
-    outfile_name = 'test_data/test_cool_250000.cool'
-    outfile_name2 = 'test_data/test_cool_1000000.cool'
+    outfile_name = 'test/test_data/test_cool_250000.cool'
+    outfile_name2 = 'test/test_data/test_cool_1000000.cool'
     binsize = 250000
     binsize2 = 1000000
 

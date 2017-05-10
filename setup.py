@@ -8,12 +8,12 @@
 from setuptools import setup
 
 requires = [
-    'h5py',
-    'numpy'
+    'h5py>=2.5.0',
+    'numpy>=1.10.1'
 ]
 
 tests_require = [
-    'cooler'
+    'cooler>=0.7.2'
 ]
 
 this_version = open("hic2cool/_version.py").readlines()[-1].split()[-1].strip("\"'")
@@ -32,8 +32,7 @@ setup(
     keywords = ["bioinformatics", "genomics", "hi-c", "juicer", "cooler", "contact-matrix", "file-format"],
     packages = ['hic2cool'],
     install_requires = requires,
-    include_package_data=True,
-    test_require = ['cooler'],
+    tests_require = ['cooler'],
     test_suite = "test",
     extras_require={
         'test': tests_require,
