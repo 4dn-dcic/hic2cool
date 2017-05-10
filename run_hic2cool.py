@@ -11,7 +11,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("infile", help=".hic input file")
     parser.add_argument("outfile", help=".cool output file")
-    parser.add_argument("-r", "--resolution",help="integer bp resolution desired in cooler file. Setting to 0 (default) will use all resolutions", type=int, default=0)
+    parser.add_argument("-r", "--resolution",help="integer bp resolution desired in cooler file. Setting to 0 (default) will use all resolutions. If all resolutions are used, a multi-res .cool file will be created, which has a different hdf5 structure. See the README for more info", type=int, default=0)
     parser.add_argument("-n", "--normalization", help="string normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT", choices=['KR', 'NONE', 'VC', 'VC_SQRT'], default='KR')
     parser.add_argument("-e", "--exclude_MT", help="if used, exclude the mitochondria (MT) from the output", action="store_true")
     args = parser.parse_args()

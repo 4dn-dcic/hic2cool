@@ -320,6 +320,19 @@ def read_normalization_vector(req, entry):
     return value
 
 
+def round_sig_digits(x, sig):
+    """
+    Round a given float (x) to a given number of significant digits
+    """
+    str_x = str(x)
+    if '.' in str_x:
+        split_on_decimal = str_x.split('.')
+        before_decimal = len(split_on_decimal[0])
+        return round(x, sig-before_decimal)
+    else:
+        return round(x, sig)
+
+
 def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map):
     """
     Adapted from the straw() function in the original straw package.
@@ -391,6 +404,10 @@ def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs, p
             if (norm != "NONE"):
                 normBinX = c1Norm[x]
                 normBinY = c2Norm[y]
+                # floats were getting different numbers of significant digits
+                # py2 and py3, so round to 12 sig digits
+                normBinX = round_sig_digits(normBinX, 12)
+                normBinY = round_sig_digits(normBinY, 12)
                 if normBinX != 0.0:
                     nX = 1/normBinX
                 else:
@@ -424,20 +441,19 @@ def write_cool(h5res, chr_info, binsize, bin_map, count_map, norm, genome):
     For an in-depth explanation of the data structure, please see:
     http://cooler.readthedocs.io/en/latest/datamodel.html
     """
-    h5res_level = h5res.create_group(str(binsize))
-    grp = h5res_level.create_group('chroms')
+    grp = h5res.create_group('chroms')
     h5opts = dict(compression='gzip', compression_opts=6)
     chr_names = write_chroms(grp, chr_info, h5opts)
     # create the 'bins' table required by cooler_root
     bin_table, chr_offsets, by_chr_offset_map = create_bins(chr_info, binsize, bin_map)
-    grp = h5res_level.create_group('bins')
+    grp = h5res.create_group('bins')
     write_bins(grp, chr_names, bin_table, h5opts, norm)
     pixels_table, bin1_offsets = create_pixels(count_map, by_chr_offset_map, len(bin_table))
-    grp = h5res_level.create_group('pixels')
+    grp = h5res.create_group('pixels')
     write_pixels(grp, pixels_table, h5opts)
-    grp = h5res_level.create_group('indexes')
+    grp = h5res.create_group('indexes')
     write_indexes(grp, chr_offsets, bin1_offsets, h5opts)
-    # update info attributes of the h5res_level
+    # update info attributes of the h5res
     info = {}
     info['nchroms'] = len(chr_names)
     info['nbins'] = len(bin_table)
@@ -447,7 +463,7 @@ def write_cool(h5res, chr_info, binsize, bin_map, count_map, norm, genome):
     info['format'] = 'HDF5::Cooler'
     info['generated-by'] = 'hic2cool-' + __version__
     info['genome-assembly'] = genome
-    h5res_level.attrs.update(info)
+    h5res.attrs.update(info)
 
 
 
@@ -487,6 +503,8 @@ def create_bins(chrs, binsize, bin_map):
                 bin_end = chr_size
             weight_key = str(chrs[c_idx][0]) + ':' + str(int(math.ceil(bin_start/binsize)))
             weight = bin_map[weight_key] if weight_key in bin_map else 1.0
+            # round to 12 significant digits
+            weight = round_sig_digits(weight, 12)
             bins_array.append([chr_name, bin_start, bin_end, weight])
             bin_start = bin_end
         # offsets are the number of bins of all chromosomes prior to this one
@@ -599,6 +617,7 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False)
     <infile> str .hic filename
     <outfile> str .cool output filename
     <resolution> int bp bin size. If 0, use all. Defaults to 0.
+                Final .cool structure will change depending on this param (see README)
     <norm> str normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT
     <exclude_MT> bool. If True, ignore MT contacts. Defaults to False.
     """
@@ -606,8 +625,12 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False)
     req, used_chrs, resolutions, masteridx, genome = read_header(infile)
     if exclude_MT: # remove chr25, which is MT, if this flag is set
         used_chrs.pop(25, None)
-    h5file = h5py.File(outfile, 'w')
-    h5res = h5file.create_group('resolutions')
+    if resolution == 0: # use multi-res formatting
+        h5file = h5py.File(outfile, 'w')
+        h5resolutions = h5file.create_group('resolutions')
+    else:
+        h5file = h5py.File(outfile, 'w')
+        h5res = h5file
     # ensure user input binsize is a resolution supported by the hic file
     if resolution != 0 and resolution not in resolutions:
         error_str = ('ERROR. Given binsize (in bp) is not a supported resolution in this file.\nPlease use 0 (all resolutions) or use one of: ' + resolutions)
@@ -631,6 +654,8 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False)
                 if str(c1) + "_" + str(c2) in covered_chr_pairs:
                     continue
                 parse_hic(norm, req, h5file, used_chrs[c1], used_chrs[c2], unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map)
+        if resolution == 0:
+            h5res = h5resolutions.create_group(str(binsize))
         write_cool(h5res, used_chrs, binsize, bin_map, count_map, norm, genome)
     req.close()
     h5file.close()

@@ -33,21 +33,34 @@ Arguments:
 **normalization type** is one of: 'KR', 'NONE', 'VC', or 'VC_SQRT'. Defaults to 'KR'.
 **-e**, or --exclude_MT, ignores the mitochondrial contacts if provided.
 
-## File structure
-All the information for a complete cooler file is stored in each resolution. The hdf5 hierarchy is organized as such:
+## Output file structure
+If you elect to use all resolutions, a multi-res .cool file will be produced. This changes the structure of the file from a typical .cool file. Namely, all of the information needed for a complete cooler file is stored in each resolution. The hdf5 hierarchy is organized as such:
 File --> 'resolutions' --> '###' (where ### is the resolution in bp).
 Specific resolutions are referenced using a dictionary syntax (i.e. h5File['resolutions']['###'] or h5File['resolutions/###']).
-For example, see the code below that generates a one-resolution file of 10000 bp.
+For example, see the code below that generates a multi-res file and then accesses the specific resolution of 10000 bp.
+```
+from hic2cool import hic2cool_convert
+import cooler
+### using 0 triggers a mult-res output
+hic2cool_convert('my_hic.hic', 'my_cool.cool', 0, 'KR')
+h5file = h5py.File('my_cool.cool', 'r')
+### will give you the cooler object with resolution = 10000 bp
+my_cooler = cooler.Cooler(h5file['resolutions/10000'])
+```
+
+When using only one resolution, the .cool file produced stores all the necessary information at the top level. Thus, organization in the multi-res format is not needed. The code below produces a file with one resolution, 10000 bp, and opens it with a cooler object.
 ```
 from hic2cool import hic2cool_convert
 import cooler
 hic2cool_convert('my_hic.hic', 'my_cool.cool', 10000, 'KR')
 h5file = h5py.File('my_cool.cool', 'r')
-my_cooler = cooler.Cooler(h5file['resolutions/10000'])
-### do things with the my_cooler object
+### will give you the cooler object with resolution = 10000 bp
+my_cooler = cooler.Cooler(h5file)
 ```
 
 ## Changelog:
+### 0.3.2
+Changed output file structure for single resolution file. Resolved an issue where rounding for weights was different between python 2 and 3.
 ### 0.3.1
 Added .travis.yml for automated testing. Changed command line running scheme. Python3 fix in hic2cool_utils.
 ### 0.3.0

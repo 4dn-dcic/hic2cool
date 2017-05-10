@@ -22,7 +22,7 @@ setup(
     name = "hic2cool",
     version = this_version,
     description = """
-        Converter between .hic files (from juicer) and .cool files (for cooler).  Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as a simple imported package or a stand-alone Python file for command line conversion.
+        Converter between .hic files (from juicer) and single-resolution or multi-resolution .cool files (for cooler).  Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as a simple imported package or a stand-alone Python file for command line conversion.
         """,
     url = "https://github.com/4dn-dcic/hic2cool",
     download_url = "https://github.com/4dn-dcic/hic2cool/tarball/" + this_version,
