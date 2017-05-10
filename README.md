@@ -3,7 +3,7 @@
 CLI for a converter between .hic files (from juicer) and .cool files (for cooler).  Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as a simple imported package or a stand-alone Python file. Written by Carl Vitzthum and directed by Soo Lee of the HMS DBMI Park lab.
 Originally published 1/26/17.
 
-The .hic parsing code is based off the straw project by Neva C. Durand and Yue Wu (https://github.com/theaidenlab/straw). The h5py structure used for .cool file writing is based off code from the cooler repository: https://github.com/mirnylab/cooler.
+The .hic parsing code is based off the straw project by Neva C. Durand and Yue Wu (https://github.com/theaidenlab/straw). The h5py structure used for .cool file writing is based off code from the cooler repository (https://github.com/mirnylab/cooler).
 
 ## Using the Python package
 ```
