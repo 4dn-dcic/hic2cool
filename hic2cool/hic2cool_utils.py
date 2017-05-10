@@ -24,7 +24,6 @@ import zlib
 import numpy as np
 import h5py
 import math
-import argparse
 from collections import OrderedDict
 from ._version import __version__
 
@@ -486,7 +485,7 @@ def create_bins(chrs, binsize, bin_map):
             bin_end = bin_start + binsize
             if bin_end > chr_size:
                 bin_end = chr_size
-            weight_key = str(chrs[c_idx][0]) + ':' + str(math.ceil(bin_start/binsize))
+            weight_key = str(chrs[c_idx][0]) + ':' + str(int(math.ceil(bin_start/binsize)))
             weight = bin_map[weight_key] if weight_key in bin_map else 1.0
             bins_array.append([chr_name, bin_start, bin_end, weight])
             bin_start = bin_end
@@ -646,25 +645,3 @@ def force_exit(message, req, h5file):
     h5file.close()
     print(message, file=sys.stderr)
     sys.exit()
-
-
-def main():
-    """
-    Execute the program from the command line
-    Args are:
-    python hic2cool.py <infile (.hic)> <outfile (.cool)> <resolutions desired (defaults to all, optionally bp int)> <normalization type (defaults to 'KR', optionally 'NONE', 'VC', or 'VC_SQRT')> <exclude MT (default False)>
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("infile", help=".hic input file")
-    parser.add_argument("outfile", help=".cool output file")
-    parser.add_argument("-r", "--resolution",help="integer bp resolution desired in cooler file. Setting to 0 (default) will use all resolutions", type=int, default=0)
-    parser.add_argument("-n", "--normalization", help="string normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT", choices=['KR', 'NONE', 'VC', 'VC_SQRT'], default='KR')
-    parser.add_argument("-e", "--exclude_MT", help="if used, exclude the mitochondria (MT) from the output", action="store_true")
-    args = parser.parse_args()
-    # these parameters adapted from theaidenlab/straw
-    # KR is default normalization type and BP is the unit for binsize
-    hic2cool_convert(args.infile, args.outfile, args.resolution, args.normalization, args.exclude_MT)
-
-
-if __name__ == '__main__':
-    main()

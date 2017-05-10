@@ -63,7 +63,7 @@ class TestRunHic(unittest.TestCase):
             hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2, self.normalization, True)
         read_err = err.getvalue().strip()
         self.assertFalse('ERROR' in read_err)
-        self.assertTrue(os.path.isfile(self.outfile_name))
+        self.assertTrue(os.path.isfile(self.outfile_name2))
 
 class TestWithCooler(unittest.TestCase):
     outfile_name = 'test/test_data/test_cool_250000.cool'
@@ -82,9 +82,12 @@ class TestWithCooler(unittest.TestCase):
         self.assertTrue(__version__ in cool.info['generated-by'])
         self.assertEqual(len(cool.chromnames), 24) #MT is excluded
         self.assertEqual(self.binsize, cool.info['bin-size'])
-        matrix_res = cool.matrix().fetch('chr1:25000000-25250000')
+        matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25250000')
         self.assertEqual(matrix_res.shape, (1,1))
-        self.assertEqual(matrix_res[0][0], 4.0)
+        self.assertEqual(matrix_res[0][0], 4)
+        matrix_res = cool.matrix(balance=True).fetch('chr1:25000000-25250000')
+        self.assertEqual(matrix_res.shape, (1,1))
+        self.assertEqual(matrix_res[0][0], 3.0430213206500172)
 
     def test_cooler_1000000(self):
         h5file = h5py.File(self.outfile_name2, 'r')
@@ -97,9 +100,12 @@ class TestWithCooler(unittest.TestCase):
         self.assertTrue(__version__ in cool.info['generated-by'])
         self.assertEqual(len(cool.chromnames), 24)
         self.assertEqual(self.binsize2, cool.info['bin-size'])
-        matrix_res = cool.matrix().fetch('chr1:0-10000000')
+        matrix_res = cool.matrix(balance=False).fetch('chr1:0-10000000')
         self.assertEqual(matrix_res.shape, (10,10))
-        self.assertEqual(matrix_res[9][9], 15.0)
+        self.assertEqual(matrix_res[9][9], 15)
+        matrix_res = cool.matrix(balance=True).fetch('chr1:0-10000000')
+        self.assertEqual(matrix_res.shape, (10,10))
+        self.assertEqual(matrix_res[9][9], 12.748362425446537)
 
 
 if __name__ == '__main__':

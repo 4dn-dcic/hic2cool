@@ -15,12 +15,16 @@ Once the package is installed, the main method is hic2cool_convert. It takes the
 from hic2cool import hic2cool_convert
 hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional normalization type> <optional boolean to exclude MT>)
 ```
-
-Or you can use the script directly. The following Python packages are required and can both be installed using pip:
+Please note that you need to install cooler (pip install cooler) to run the test package. It is included in requirements.txt.
 
 ## Command line converter:
+First, ensure that dependencies are installed (done automatically when using the hic2cool package).
 ```
-$ python hic2cool/hic2cool_utils.py <infile> <outfile> -r <resolution> -n <normalization type> -e
+pip install -r requirements.txt
+```
+Then, from the root directory, run:
+```
+$ python run_hic2cool.py <infile> <outfile> -r <resolution> -n <normalization type> -e
 ```
 Arguments:
 **infile** is a .hic input file.
@@ -45,6 +49,6 @@ my_cooler = cooler.Cooler(h5file['resolutions/10000'])
 
 ## Changelog:
 ### 0.3.1
-Added .travis.yml for automated testing.
+Added .travis.yml for automated testing. Changed command line running scheme. Python3 fix in hic2cool_utils.
 ### 0.3.0
 Added multi-resolution format to output cool files. Setup argparse. Improved speed. Added tests for new resolutions format.
