@@ -320,21 +320,6 @@ def read_normalization_vector(req, entry):
     return value
 
 
-def round_sig_digits(x, sig):
-    """
-    Round a given float (x) to a given number of significant digits
-    """
-    str_x = str(x)
-    if not isinstance(x, float):
-        return x
-    if '.' in str_x:
-        split_on_decimal = str_x.split('.')
-        before_decimal = len(split_on_decimal[0])
-        return round(x, sig-before_decimal)
-    else:
-        return round(x, sig)
-
-
 def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs, pair_footer_info, chr_footer_info, bin_map, count_map):
     """
     Adapted from the straw() function in the original straw package.
@@ -406,11 +391,6 @@ def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs, p
             if (norm != "NONE"):
                 normBinX = c1Norm[x]
                 normBinY = c2Norm[y]
-                # floats were getting different numbers of significant digits
-                # py2 and py3, so round to 12 sig digits
-                normBinX = round_sig_digits(normBinX, 12)
-                normBinY = round_sig_digits(normBinY, 12)
-
                 if normBinX != 0.0:
                     nX = 1/normBinX
                 else:
@@ -506,8 +486,6 @@ def create_bins(chrs, binsize, bin_map):
                 bin_end = chr_size
             weight_key = str(chrs[c_idx][0]) + ':' + str(int(math.ceil(bin_start/binsize)))
             weight = bin_map[weight_key] if weight_key in bin_map else 1.0
-            # round to 12 significant digits
-            weight = round_sig_digits(weight, 12)
             bins_array.append([chr_name, bin_start, bin_end, weight])
             bin_start = bin_end
         # offsets are the number of bins of all chromosomes prior to this one

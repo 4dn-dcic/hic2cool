@@ -59,6 +59,8 @@ my_cooler = cooler.Cooler(h5file)
 ```
 
 ## Changelog:
+### 0.3.3
+Removed rounding fix. For now, allow py2 and py3 weights to have different number of significant figures (they're very close).
 ### 0.3.2
 Changed output file structure for single resolution file. Resolved an issue where rounding for weights was different between python 2 and 3.
 ### 0.3.1

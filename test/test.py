@@ -95,7 +95,7 @@ class TestWithCooler(unittest.TestCase):
         self.assertEqual(matrix_res[0][0], 4)
         matrix_res = cool.matrix(balance=True).fetch('chr1:25000000-25250000')
         self.assertEqual(matrix_res.shape, (1,1))
-        self.assertEqual(matrix_res[0][0], 3.04302132)
+        self.assertEqual(round(matrix_res[0][0],3), 3.043)
 
     def test_cooler_1000000(self):
         h5file = h5py.File(self.outfile_name2, 'r')
@@ -112,7 +112,7 @@ class TestWithCooler(unittest.TestCase):
         self.assertEqual(matrix_res[9][9], 15)
         matrix_res = cool.matrix(balance=True).fetch('chr1:0-10000000')
         self.assertEqual(matrix_res.shape, (10,10))
-        self.assertEqual(matrix_res[9][9], 12.74836243)
+        self.assertEqual(round(matrix_res[9][9],3), 12.748)
 
     def test_cooler_multi_res(self):
         h5file = h5py.File(self.outfile_name_all, 'r')
@@ -136,7 +136,7 @@ class TestWithCooler(unittest.TestCase):
         self.assertEqual(matrix_res[0][0], 4)
         matrix_res = cool.matrix(balance=True).fetch('chr1:25000000-25250000')
         self.assertEqual(matrix_res.shape, (1,1))
-        self.assertEqual(matrix_res[0][0], 3.04302132)
+        self.assertEqual(round(matrix_res[0][0],3), 3.043)
 
 
 if __name__ == '__main__':
