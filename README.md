@@ -59,6 +59,9 @@ my_cooler = cooler.Cooler(h5file)
 ```
 
 ## Changelog:
+
+### 0.3.4
+Fixed issue where chromosome name was not getting properly set for 'All' vs 'all'.
 ### 0.3.3
 Removed rounding fix. For now, allow py2 and py3 weights to have different number of significant figures (they're very close).
 ### 0.3.2
