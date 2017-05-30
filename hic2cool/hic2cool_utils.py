@@ -75,7 +75,7 @@ def read_header(infile):
         name = readcstr(req)
         length = struct.unpack('<i',req.read(4))[0]
         if name and length:
-            formatted_name = 'chr' + name if (name != 'All' and 'chr' not in name) else name
+            formatted_name = 'chr' + name if ('all' not in name.lower() and 'chr' not in name.lower()) else name
             formatted_name = 'chrM' if formatted_name == 'chrMT' else formatted_name
             chrs[i] = [i, formatted_name, length]
     nBpRes = struct.unpack('<i',req.read(4))[0]
@@ -624,10 +624,10 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False)
         req, pair_footer_info, chr_footer_info = read_footer(req, masteridx, norm, unit, binsize)
         covered_chr_pairs = []
         for chr_x in used_chrs:
-            if used_chrs[chr_x][1] == 'All':
+            if used_chrs[chr_x][1].lower() == 'all':
                 continue
             for chr_y in used_chrs:
-                if used_chrs[chr_y][1] == 'All':
+                if used_chrs[chr_y][1].lower() == 'all':
                     continue
                 c1=min(chr_x,chr_y)
                 c2=max(chr_x,chr_y)
