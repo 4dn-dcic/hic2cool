@@ -137,6 +137,12 @@ class TestWithCooler(unittest.TestCase):
         matrix_res = cool.matrix(balance=True).fetch('chr1:25000000-25250000')
         self.assertEqual(matrix_res.shape, (1,1))
         self.assertEqual(round(matrix_res[0][0],3), 3.043)
+        # make sure the updated cooler multi-res syntax is working
+        cool = cooler.Cooler(self.outfile_name_all + '::resolutions/100000')
+        cool_file = cool.filename.encode('utf-8')
+        self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
+        cool_res = int(cool.info['bin-size'])
+        self.assertEqual(100000, cool_res)
 
 
 if __name__ == '__main__':

@@ -589,7 +589,7 @@ def write_indexes(grp, chr_offsets, bin1_offsets, h5opts):
     grp.create_dataset('bin1_offset',  shape=(len(bin1_offsets),), dtype=np.int32, data=bin1_offsets, **h5opts)
 
 
-def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False):
+def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False, command_line=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -601,10 +601,21 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR', exclude_MT=False)
                 Final .cool structure will change depending on this param (see README)
     <norm> str normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT
     <exclude_MT> bool. If True, ignore MT contacts. Defaults to False.
+    <command_line> bool. True if executing from run_hic.py. Prompts hic headers
+                be printed to stdout.
     """
     unit='BP' # only using base pair unit for now
     resolution = int(resolution)
     req, used_chrs, resolutions, masteridx, genome = read_header(infile)
+    if command_line: # print hic header info for command line usage
+        chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
+        print('################')
+        print('### hic2cool ###')
+        print('################')
+        print('hic file header info:')
+        print('Chromosomes: ', chr_names)
+        print('Resolutions: ', resolutions)
+        print('Genome: ', genome)
     if exclude_MT: # remove chr25, which is MT, if this flag is set
         used_chrs.pop(25, None)
     if resolution == 0: # use multi-res formatting

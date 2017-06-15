@@ -17,7 +17,7 @@ def main():
     args = parser.parse_args()
     # these parameters adapted from theaidenlab/straw
     # KR is default normalization type and BP is the unit for binsize
-    hic2cool_convert(args.infile, args.outfile, args.resolution, args.normalization, args.exclude_MT)
+    hic2cool_convert(args.infile, args.outfile, args.resolution, args.normalization, args.exclude_MT, True)
 
 
 if __name__ == '__main__':
