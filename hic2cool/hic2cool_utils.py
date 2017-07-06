@@ -299,7 +299,7 @@ def read_block(req, blockNumber, blockMap):
                 else:
                     counts = struct.unpack('<f',uncompressedBytes[temp:(temp+4)])[0]
                     temp=temp+4
-                    if (countsnot != 0x7fc00000):
+                    if (counts != 0x7fc00000):
                         record = dict()
                         record['binX'] = bin1
                         record['binY'] = bin2
