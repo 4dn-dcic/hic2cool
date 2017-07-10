@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 from __future__ import absolute_import, division, print_function, unicode_literals
 import sys
 import struct
@@ -160,10 +158,10 @@ def parse_norm(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs,
     magic_string = ""
     if (not (norm=="VC" or norm=="VC_SQRT" or norm=="KR")):
         print("Norm specified incorrectly, must be one of <NONE/VC/VC_SQRT/KR>")
-        force_exit(warn_string, req, h5file)
+        force_exit(warn_string, req)
     if (not (unit=="BP" or unit=="FRAG")):
         print("Unit specified incorrectly, must be one of <BP/FRAG>")
-        force_exit(warn_string, req, h5file)
+        force_exit(warn_string, req)
 
     chr1ind = chr1[0]
     chr2ind = chr2[0]
@@ -183,7 +181,7 @@ def parse_norm(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs,
             'infile header and the actual information it contains.\nThe '
             'intersection between ' + chr1[1] + ' and ' + chr2[1] + 
             ' could not be found in the file.')
-        force_exit(warn_string, req, h5file)
+        force_exit(warn_string, req)
     myFilePos = pair_footer_info[chr_key]
 
     if (norm != "NONE"):
@@ -244,7 +242,7 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
             'ERROR. Given binsize (in bp) is not a supported resolution in ' +
             'this file.\nPlease use 0 (all resolutions) or use one of: ' + 
             resolutions)
-        force_exit(error_str, req, h5file)
+        force_exit(error_str, req)
 
     use_resolutions = resolutions if resolution == 0 else [resolution]
 
@@ -311,13 +309,12 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
     req.close()
 
 
-def force_exit(message, req, h5file):
+def force_exit(message, req):
     """
     Exit the program due to some error. Print out message and close the given
     input files.
     """
     req.close()
-    h5file.close()
     print(message, file=sys.stderr)
     sys.exit()
 
