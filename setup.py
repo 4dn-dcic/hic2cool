@@ -37,6 +37,11 @@ setup(
     extras_require={
         'test': tests_require,
     },
+    entry_points={
+        'console_scripts': [
+             'hic2cool = hic2cool.__main__:main',
+        ]
+    },
     classifiers = [
         "Programming Language :: Python :: 3",
         "Development Status :: 4 - Beta",
