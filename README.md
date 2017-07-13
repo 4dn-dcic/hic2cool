@@ -15,7 +15,7 @@ $ pip install hic2cool
 Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in /test/test.py.
 ```
 from hic2cool import hic2cool_convert
-hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional normalization type> <optional boolean to exclude MT>)
+hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional boolean to exclude MT>)
 ```
 Please note that you need to install cooler (pip install cooler) to run the test package. It is included in requirements.txt.
 
@@ -24,7 +24,7 @@ Please note that you need to install cooler (pip install cooler) to run the test
 
 If you install hic2cool itself using pip, you can simply type:
 ```
-$ hic2cool <infile> <outfile> -r <resolution> -n <normalization type> -e
+$ hic2cool <infile> <outfile> -r <resolution> -e
 ```
 
 Otherwise, first ensure that dependencies are installed (done automatically 'pip installing' hic2cool package).
@@ -34,7 +34,7 @@ pip install -r requirements.txt
 
 Then, from the root directory, run:
 ```
-$ python -m hic2cool <infile> <outfile> -r <resolution> -n <normalization type> -e
+$ python -m hic2cool <infile> <outfile> -r <resolution> -e
 ```
 
 Arguments:
@@ -44,8 +44,6 @@ Arguments:
 **outfile** is a .cool output file.
 
 **resolution** is a integer bp resolution supported by the hic file. *Please note* that only resolutions contained within the original hic file can be used. If 0 is given, will use all resolutions to build a multi-resolution file. Default is 0.
-
-**normalization type** is one of: 'KR', 'NONE', 'VC', or 'VC_SQRT'. Defaults to 'KR'.
 
 **-e**, or --exclude_MT, ignores the mitochondrial contacts if provided.
 

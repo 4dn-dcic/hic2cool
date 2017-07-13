@@ -33,6 +33,9 @@ import numpy as np
 import h5py
 from ._version import __version__
 
+# Global hic normalization types used
+NORMS = ["VC", "VC_SQRT", "KR"]
+
 
 # read function
 def readcstr(f):
@@ -97,14 +100,14 @@ def read_header(infile):
     return req, chrs, resolutions, masterindex, genome
 
 
-def read_footer(req, master, norm, unit, resolution):
+def read_footer(req, master, unit, resolution):
     """
     Takes in an open hic file and generates two dictionaries. pair_footer_info
     contains the file position of info for any given chromosome pair (formatted
     as a string). Chr_footer_info gives chromosome-level size and position info
-    relative to the file. This way, this function only has to run once
-    All of the unused read() code is used to find the correct place in the file,
-    supposedly. This is code from straw.
+    relative to the file for each normalization type. This way, this function
+    only has to run once. All of the unused read() code is used to find the
+    correct place in the file, supposedly. This is code from straw.
 
     """
     pair_footer_info = {}
@@ -144,13 +147,15 @@ def read_footer(req, master, norm, unit, resolution):
     nEntries = struct.unpack('<i', req.read(4))[0]
     for i in range(nEntries):
         normtype = readcstr(req)
+        if normtype in NORMS and normtype not in chr_footer_info:
+            chr_footer_info[normtype] = {}
         chrIdx = struct.unpack('<i', req.read(4))[0]
         unit1 = readcstr(req)
         resolution1 = struct.unpack('<i', req.read(4))[0]
         filePosition = struct.unpack('<q', req.read(8))[0]
         sizeInBytes = struct.unpack('<i', req.read(4))[0]
-        if (normtype == norm and unit1 == unit and resolution1 == resolution):
-            chr_footer_info[chrIdx] = {
+        if (normtype in NORMS and unit1 == unit and resolution1 == resolution):
+            chr_footer_info[normtype][chrIdx] = {
                 'position': filePosition,
                 'size': sizeInBytes
             }
@@ -340,23 +345,21 @@ def read_normalization_vector(req, entry):
     return value
 
 
-def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
-              pair_footer_info, chr_footer_info, bin_map, count_map):
+def parse_hic(req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
+              pair_footer_info, chr_footer_info, norm_map, count_map):
     """
     Adapted from the straw() function in the original straw package.
     Mainly, since all chroms are iterated over, the read_header and read_footer
     functions were placed outside of straw() and made to be reusable across
     any chromosome pair.
-    Main function is to build a bin_map, which contains normalization values
+    Main function is to build a norm_map, which contains normalization values
     for every bin, and a count_map, which is a nested dictionary which contains
     the contact count for any two bins.
-
+    As of version 0.3.6, all normalization vectors are automatically returned
+    to be written in the output cool file.
     """
     blockMap = {}
     magic_string = ""
-    if norm not in ["NONE", "VC", "VC_SQRT", "KR"]:
-        print("Norm specified incorrectly, must be one of <NONE/VC/VC_SQRT/KR>")
-        force_exit(warn_string, req, h5file)
     if unit not in ["BP", "FRAG"]:
         print("Unit specified incorrectly, must be one of <BP/FRAG>")
         force_exit(warn_string, req, h5file)
@@ -399,9 +402,6 @@ def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
             'not be found in the file.')
         force_exit(warn_string, req, h5file)
     myFilePos = pair_footer_info[chr_key]
-    if (norm != "NONE"):
-        c1Norm = read_normalization_vector(req, chr_footer_info[c1])
-        c2Norm = read_normalization_vector(req, chr_footer_info[c2])
     list1 = read_matrix(req, myFilePos, unit, binsize, blockMap)
     blockBinCount = list1[0]
     blockColumnCount = list1[1]
@@ -415,29 +415,38 @@ def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
             x = rec['binX']
             y = rec['binY']
             c = rec['counts']
-            if (norm != "NONE"):
-                normBinX = c1Norm[x]
-                normBinY = c2Norm[y]
-                if normBinX != 0.0:
-                    nX = 1 / normBinX
-                else:
-                    nX = 'inf'
-                if normBinY != 0.0:
-                    nY = 1 / normBinY
-                else:
-                    nY = 'inf'
-            else:
-                nX = 1.0
-                nY = 1.0
+            c1_key = str(c1) + ":" + str(x)
+            c2_key = str(c2) + ":" + str(y)
+
+            # set up binmap for c1 and c2
+            if c1_key not in norm_map:
+                norm_map[c1_key] = {}
+            if c2_key not in norm_map:
+                norm_map[c2_key] = {}
+            # iterate through the norms
+            for norm in NORMS:
+                if norm not in norm_map[c1_key]:
+                    c1Norm = read_normalization_vector(req, chr_footer_info[norm][c1])
+                    normBinX = c1Norm[x]
+                    if normBinX != 0.0:
+                        nX = 1 / normBinX
+                    else:
+                        nX = 'inf'
+                    norm_map[c1_key][norm] = nX
+                if norm not in norm_map[c2_key]:
+                    c2Norm = read_normalization_vector(req, chr_footer_info[norm][c2])
+                    normBinY = c2Norm[y]
+                    if normBinY != 0.0:
+                        nY = 1 / normBinY
+                    else:
+                        nY = 'inf'
+                    norm_map[c2_key][norm] = nY
+
             if ((x >= origRegionIndices[0] and x <= origRegionIndices[1] and
                  y >= origRegionIndices[2] and y <= origRegionIndices[3]) or
                  ((c1 == c2) and
                    y >= origRegionIndices[0] and y <= origRegionIndices[1] and
                    x >= origRegionIndices[2] and x <= origRegionIndices[3])):
-                c1_key = str(c1) + ":" + str(x)
-                c2_key = str(c2) + ":" + str(y)
-                bin_map[c1_key] = nX
-                bin_map[c2_key] = nY
                 if c1_key not in count_map:
                     count_map[c1_key] = {}
                 if c2_key in count_map[c1_key]:
@@ -455,7 +464,7 @@ def parse_hic(norm, req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
     covered_chr_pairs.append(chr_key)
 
 
-def write_cool(h5res, chr_info, binsize, bin_map, count_map, norm, genome):
+def write_cool(h5res, chr_info, binsize, norm_map, count_map, genome):
     """
     Use various information to write a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
@@ -466,10 +475,9 @@ def write_cool(h5res, chr_info, binsize, bin_map, count_map, norm, genome):
     h5opts = dict(compression='gzip', compression_opts=6)
     chr_names = write_chroms(grp, chr_info, h5opts)
     # create the 'bins' table required by cooler_root
-    bin_table, chr_offsets, by_chr_offset_map = create_bins(
-        chr_info, binsize, bin_map)
+    bin_table, chr_offsets, by_chr_offset_map = create_bins(chr_info, binsize, norm_map)
     grp = h5res.create_group('bins')
-    write_bins(grp, chr_names, bin_table, h5opts, norm)
+    write_bins(grp, chr_names, bin_table, h5opts)
     pixels_table, bin1_offsets = create_pixels(
         count_map, by_chr_offset_map, len(bin_table))
     grp = h5res.create_group('pixels')
@@ -513,12 +521,12 @@ def write_chroms(grp, chrs, h5opts):
     return chr_names
 
 
-def create_bins(chrs, binsize, bin_map):
+def create_bins(chrs, binsize, norm_map):
     """
     Cooler requires a bin file with each line having <chrId, binStart, binEnd,
     weight> where binStart and binEnd are bp locations and weight is a float.
     Use the chromosome info from the header along with given binsize to build
-    this table in numpy Returns the table (with dimensions #bins x 4) and chr
+    this table in numpy. Returns the table (with dimensions #bins x 4) and chr
     offset information with regard to bins
 
     """
@@ -535,10 +543,15 @@ def create_bins(chrs, binsize, bin_map):
             bin_end = bin_start + binsize
             if bin_end > chr_size:
                 bin_end = chr_size
-            weight_key = '{}:{}'.format(chrs[c_idx][0],
+            bin_norms = {}
+            norm_key = '{}:{}'.format(chrs[c_idx][0],
                                         int(math.ceil(bin_start/binsize)))
-            weight = bin_map[weight_key] if weight_key in bin_map else 1.0
-            bins_array.append([chr_name, bin_start, bin_end, weight])
+            # find entries for each norm for this bin
+            for norm in NORMS:
+                norm_val = norm_map.get(norm_key, {}).get(norm, None)
+                if norm_val is not None:
+                    bin_norms[norm] = norm_val
+            bins_array.append([chr_name, bin_start, bin_end, bin_norms])
             bin_start = bin_end
         # offsets are the number of bins of all chromosomes prior to this one
         # by_chr_offsets are bin offsets for each chromosome, indexed by chr_idx
@@ -548,11 +561,12 @@ def create_bins(chrs, binsize, bin_map):
     return np.array(bins_array), np.array(offsets), by_chr_offsets
 
 
-def write_bins(grp, chroms, bins, h5opts, norm):
+def write_bins(grp, chroms, bins, h5opts):
     """
     Write the bins table, which has columns: chrom, start (in bp), end (in bp),
-    and weight (float). Chrom is an index which corresponds to the chroms table.
-    Only writes weight column if norm != "NONE"
+    and one column for each normalization type, named for the norm type.
+    'weight' is a reserved column for `cooler balance`.
+    Chrom is an index which corresponds to the chroms table.
     """
     n_chroms = len(chroms)
     n_bins = len(bins)
@@ -561,7 +575,9 @@ def write_bins(grp, chroms, bins, h5opts, norm):
     chrom_ids = [idmap[chrom.encode('UTF-8')] for chrom in bins[:, 0]]
     starts = [int(val) for val in bins[:, 1]]
     ends = [int(val) for val in bins[:, 2]]
-    weights = [float(val) for val in bins[:, 3]]
+    norms = {}
+    for norm in NORMS:
+        norms[norm] = [float(val[norm]) if norm in val else np.inf for val in bins[:, 3]]
     enum_dtype = h5py.special_dtype(enum=(np.int32, idmap))
     grp.create_dataset(
         'chrom',
@@ -581,12 +597,12 @@ def write_bins(grp, chroms, bins, h5opts, norm):
         dtype=np.int32,
         data=ends,
         **h5opts)
-    if norm != "NONE":
+    for norm in NORMS:
         grp.create_dataset(
-            'weight',
+            norm,
             shape=(n_bins,),
             dtype=np.float64,
-            data=weights,
+            data=norms[norm],
             **h5opts)
 
 
@@ -699,8 +715,7 @@ def write_indexes(grp, chr_offsets, bin1_offsets, h5opts):
         **h5opts)
 
 
-def hic2cool_convert(infile, outfile, resolution=0, norm='KR',
-                     exclude_MT=False, command_line=False):
+def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_line=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -710,7 +725,6 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR',
     <outfile> str .cool output filename
     <resolution> int bp bin size. If 0, use all. Defaults to 0.
                 Final .cool structure will change depending on this param (see README)
-    <norm> str normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT
     <exclude_MT> bool. If True, ignore MT contacts. Defaults to False.
     <command_line> bool. True if executing from run_hic.py. Prompts hic headers
                 be printed to stdout.
@@ -744,10 +758,10 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR',
         force_exit(error_str, req, h5file)
     use_resolutions = resolutions if resolution == 0 else [resolution]
     for binsize in use_resolutions:
-        bin_map = {}
+        norm_map = {}
         count_map = {}
         req, pair_footer_info, chr_footer_info = read_footer(
-            req, masteridx, norm, unit, binsize)
+            req, masteridx, unit, binsize)
         covered_chr_pairs = []
         for chr_x in used_chrs:
             if used_chrs[chr_x][1].lower() == 'all':
@@ -762,12 +776,12 @@ def hic2cool_convert(infile, outfile, resolution=0, norm='KR',
                 # and c2-c1 reciprocally
                 if str(c1) + "_" + str(c2) in covered_chr_pairs:
                     continue
-                parse_hic(norm, req, h5file, used_chrs[c1], used_chrs[c2],
+                parse_hic(req, h5file, used_chrs[c1], used_chrs[c2],
                           unit, binsize, covered_chr_pairs, pair_footer_info,
-                          chr_footer_info, bin_map, count_map)
+                          chr_footer_info, norm_map, count_map)
         if resolution == 0:
             h5res = h5resolutions.create_group(str(binsize))
-        write_cool(h5res, used_chrs, binsize, bin_map, count_map, norm, genome)
+        write_cool(h5res, used_chrs, binsize, norm_map, count_map, genome)
     req.close()
     h5file.close()
 
