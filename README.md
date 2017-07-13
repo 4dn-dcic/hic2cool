@@ -21,14 +21,22 @@ Please note that you need to install cooler (pip install cooler) to run the test
 
 
 ## Command line use:
-First, ensure that dependencies are installed (done automatically 'pip installing' hic2cool package).
+
+If you install hic2cool itself using pip, you can simply type:
+```
+$ hic2cool <infile> <outfile> -r <resolution> -n <normalization type> -e
+```
+
+Otherwise, first ensure that dependencies are installed (done automatically 'pip installing' hic2cool package).
 ```
 pip install -r requirements.txt
 ```
+
 Then, from the root directory, run:
 ```
-$ python run_hic2cool.py <infile> <outfile> -r <resolution> -n <normalization type> -e
+$ python -m hic2cool <infile> <outfile> -r <resolution> -n <normalization type> -e
 ```
+
 Arguments:
 
 **infile** is a .hic input file.
@@ -42,6 +50,7 @@ Arguments:
 **-e**, or --exclude_MT, ignores the mitochondrial contacts if provided.
 
 Running hic2cool from the command line will cause some helpful information about the hic file to be printed to stdout.
+
 
 
 ## Output file structure

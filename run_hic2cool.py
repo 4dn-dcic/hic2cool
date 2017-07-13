@@ -1,24 +1,11 @@
-from __future__ import absolute_import
-from hic2cool import hic2cool_convert
-import argparse
+from __future__ import print_function, absolute_import
+import sys
+from hic2cool.__main__ import main
 
-def main():
-    """
-    Execute the program from the command line
-    Args are:
-    python hic2cool.py <infile (.hic)> <outfile (.cool)> <resolutions desired (defaults to all, optionally bp int)> <normalization type (defaults to 'KR', optionally 'NONE', 'VC', or 'VC_SQRT')> <exclude MT (default False)>
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("infile", help=".hic input file")
-    parser.add_argument("outfile", help=".cool output file")
-    parser.add_argument("-r", "--resolution",help="integer bp resolution desired in cooler file. Setting to 0 (default) will use all resolutions. If all resolutions are used, a multi-res .cool file will be created, which has a different hdf5 structure. See the README for more info", type=int, default=0)
-    parser.add_argument("-n", "--normalization", help="string normalization type. Defaults to KR, optionally NONE, VC, or VC_SQRT", choices=['KR', 'NONE', 'VC', 'VC_SQRT'], default='KR')
-    parser.add_argument("-e", "--exclude_MT", help="if used, exclude the mitochondria (MT) from the output", action="store_true")
-    args = parser.parse_args()
-    # these parameters adapted from theaidenlab/straw
-    # KR is default normalization type and BP is the unit for binsize
-    hic2cool_convert(args.infile, args.outfile, args.resolution, args.normalization, args.exclude_MT, True)
+warning = """The `run_hic2cool.py` script is deprecated and will be removed. 
+Instead, please use `python -m hic2cool` or just `hic2cool` if the hic2cool 
+package is installed in your environment.
+"""
 
-
-if __name__ == '__main__':
-    main()
+print(warning, file=sys.stderr)
+main()
