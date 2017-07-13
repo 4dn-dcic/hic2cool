@@ -316,9 +316,9 @@ def read_block(req, blockNumber, blockMap):
                         v.append(record)
                         index = index + 1
                 else:
-                    counts = struct.unpack('<f', uncompressedBytes[temp:(temp+4)])[0]
-                    temp = temp+4
-                    if (countsnot != 0x7fc00000):
+                    counts = struct.unpack('<f',uncompressedBytes[temp:(temp+4)])[0]
+                    temp=temp+4
+                    if (counts != 0x7fc00000):
                         record = dict()
                         record['binX'] = bin1
                         record['binY'] = bin2
