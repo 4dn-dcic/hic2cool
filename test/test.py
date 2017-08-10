@@ -37,37 +37,40 @@ class TestRunHic(unittest.TestCase):
     outfile_name_all = 'test/test_data/test_cool_multi_res.cool'
     binsize = 250000
     binsize2 = 1000000
-    normalization = 'KR'
+
 
     def test_run_MT_error(self):
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
             with self.assertRaises(SystemExit):
-                hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, self.normalization)
+                hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
         read_err = err.getvalue().strip()
         self.assertTrue('ERROR' in read_err)
 
+
     def test_run_exclude_MT_250000(self):
         with captured_output() as (out, err):
-            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, self.normalization, True)
+            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, True)
         read_err = err.getvalue().strip()
         self.assertFalse('ERROR' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name))
 
+
     def test_run_exclude_MT_1000000(self):
         with captured_output() as (out, err):
-            hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2, self.normalization, True)
+            hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2, True)
         read_err = err.getvalue().strip()
         self.assertFalse('ERROR' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name2))
+
 
     def test_run_exclude_MT_multi_res(self):
         # run hic2cool for all resolutions in the hic file
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
-            hic2cool_convert(self.infile_name, self.outfile_name_all, 0, self.normalization, True)
+            hic2cool_convert(self.infile_name, self.outfile_name_all, 0, True)
         read_err = err.getvalue().strip()
         self.assertFalse('ERROR' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name_all))
@@ -79,6 +82,7 @@ class TestWithCooler(unittest.TestCase):
     outfile_name_all = 'test/test_data/test_cool_multi_res.cool'
     binsize = 250000
     binsize2 = 1000000
+
 
     def test_cooler_250000(self):
         h5file = h5py.File(self.outfile_name, 'r')
@@ -97,6 +101,7 @@ class TestWithCooler(unittest.TestCase):
         self.assertEqual(matrix_res.shape, (1,1))
         self.assertEqual(round(matrix_res[0][0],3), 3.043)
 
+
     def test_cooler_1000000(self):
         h5file = h5py.File(self.outfile_name2, 'r')
         cool = cooler.Cooler(h5file)
@@ -113,6 +118,7 @@ class TestWithCooler(unittest.TestCase):
         matrix_res = cool.matrix(balance=True).fetch('chr1:0-10000000')
         self.assertEqual(matrix_res.shape, (10,10))
         self.assertEqual(round(matrix_res[9][9],3), 12.748)
+
 
     def test_cooler_multi_res(self):
         h5file = h5py.File(self.outfile_name_all, 'r')
@@ -143,6 +149,14 @@ class TestWithCooler(unittest.TestCase):
         self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
         cool_res = int(cool.info['bin-size'])
         self.assertEqual(100000, cool_res)
+
+
+    def test_check_norms(self):
+        NORMS = ["VC", "VC_SQRT", "KR"]
+        h5file = h5py.File(self.outfile_name_all, 'r')
+        bins = h5file['bins']
+        for norm in NORMS:
+            assert norm in bins.keys()
 
 
 if __name__ == '__main__':
