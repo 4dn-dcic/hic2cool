@@ -715,6 +715,39 @@ def write_indexes(grp, chr_offsets, bin1_offsets, h5opts):
         **h5opts)
 
 
+def write_zooms_for_higlass(h5res):
+    """
+    Add max-zoom column needed for higlass, but only if the resolutions are
+    successively divisible by two. Otherwise, warn that this file will not be
+    higlass compatible
+    """
+    resolutions = sorted(f['resolutions'].keys(), key=int, reverse=True)
+
+    # test if resolutions are higlass compatible
+    higlass_compat = True
+    for i in range(len(resolutions)):
+        if i == len(resolutions) - 1:
+            break
+        if resolutions[i] * 2 != resolutions[i+1]:
+            higlass_compat = False
+            break
+    if not higlass_compat:
+        print('WARNING: This hic file is not higlass compatible! Will not add [max-zoom] attribute.')
+        return
+
+    print('INFO: This hic file is higlass compatible! Adding [max-zoom] attribute.')
+    max_zoom = len(resolutions) - 1
+
+    # Assign max-zoom attribute
+    h5res.attrs['max-zoom'] = max_zoom
+    print('max-zoom: {}'.format(max_zoom))
+
+    # Make links to zoom levels
+    for i, res in enumerate(resolutions):
+        print('zoom {}: {}'.format(i, res))
+        h5res[str(i)] = h5py.SoftLink('/resolutions/{}'.format(res))
+
+
 def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_line=False):
     """
     Main function that coordinates the reading of header and footer from infile
@@ -782,6 +815,7 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_li
         if resolution == 0:
             h5res = h5resolutions.create_group(str(binsize))
         write_cool(h5res, used_chrs, binsize, norm_map, count_map, genome)
+    write_zooms_for_higlass(h5file)
     req.close()
     h5file.close()
 
