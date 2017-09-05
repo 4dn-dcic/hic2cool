@@ -81,6 +81,8 @@ my_cooler = cooler.Cooler(h5file)
 
 ## Changelog:
 
+### 0.3.6
+Simple release to fix pip execution
 ### 0.3.5
 README updates, switched cooler syntax in test, and added helpful printing of hic file header info when using the command line tool.
 ### 0.3.4
