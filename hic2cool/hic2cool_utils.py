@@ -63,39 +63,39 @@ def read_header(infile):
     req = open(infile, 'rb')
     chrs = {}
     resolutions = []
-    magic_string = struct.unpack('<3s', req.read(3))[0]
+    magic_string = struct.unpack(b'<3s', req.read(3))[0]
     req.read(1)
     if (magic_string != b"HIC"):
         print('This does not appear to be a HiC file; '
               'magic string is incorrect')
         sys.exit()
     global version
-    version = struct.unpack('<i', req.read(4))[0]
-    masterindex = struct.unpack('<q', req.read(8))[0]
+    version = struct.unpack(b'<i', req.read(4))[0]
+    masterindex = struct.unpack(b'<q', req.read(8))[0]
     genome = b""
     c = req.read(1)
     while (c != b'\0'):
         genome += c
         c = req.read(1)
     genome = genome.decode('ascii')
-    nattributes = struct.unpack('<i', req.read(4))[0]
+    nattributes = struct.unpack(b'<i', req.read(4))[0]
     for x in range(nattributes):
         key = readcstr(req)
         value = readcstr(req)
-    nChrs = struct.unpack('<i', req.read(4))[0]
+    nChrs = struct.unpack(b'<i', req.read(4))[0]
     for i in range(0, nChrs):
         name = readcstr(req)
-        length = struct.unpack('<i', req.read(4))[0]
+        length = struct.unpack(b'<i', req.read(4))[0]
         if name and length:
             formatted_name = ('chr' + name if ('all' not in name.lower() and
                               'chr' not in name.lower()) else name)
             formatted_name = ('chrM' if formatted_name == 'chrMT'
                               else formatted_name)
             chrs[i] = [i, formatted_name, length]
-    nBpRes = struct.unpack('<i', req.read(4))[0]
+    nBpRes = struct.unpack(b'<i', req.read(4))[0]
     # find bp delimited resolutions supported by the hic file
     for x in range(0, nBpRes):
-        res = struct.unpack('<i', req.read(4))[0]
+        res = struct.unpack(b'<i', req.read(4))[0]
         resolutions.append(res)
     return req, chrs, resolutions, masterindex, genome
 
@@ -113,47 +113,47 @@ def read_footer(req, master, unit, resolution):
     pair_footer_info = {}
     chr_footer_info = {}
     req.seek(master)
-    nBytes = struct.unpack('<i', req.read(4))[0]
-    nEntries = struct.unpack('<i', req.read(4))[0]
+    nBytes = struct.unpack(b'<i', req.read(4))[0]
+    nEntries = struct.unpack(b'<i', req.read(4))[0]
     found = False
     for i in range(nEntries):
         stri = readcstr(req)
-        fpos = struct.unpack('<q', req.read(8))[0]
-        sizeinbytes = struct.unpack('<i', req.read(4))[0]
+        fpos = struct.unpack(b'<q', req.read(8))[0]
+        sizeinbytes = struct.unpack(b'<i', req.read(4))[0]
         pair_footer_info[stri] = fpos
-    nExpectedValues = struct.unpack('<i', req.read(4))[0]
+    nExpectedValues = struct.unpack(b'<i', req.read(4))[0]
     for i in range(nExpectedValues):
         str_ = readcstr(req)
-        binSize = struct.unpack('<i', req.read(4))[0]
-        nValues = struct.unpack('<i', req.read(4))[0]
+        binSize = struct.unpack(b'<i', req.read(4))[0]
+        nValues = struct.unpack(b'<i', req.read(4))[0]
         for j in range(nValues):
-            v = struct.unpack('<d', req.read(8))[0]
-        nNormalizationFactors = struct.unpack('<i', req.read(4))[0]
+            v = struct.unpack(b'<d', req.read(8))[0]
+        nNormalizationFactors = struct.unpack(b'<i', req.read(4))[0]
         for j in range(nNormalizationFactors):
-            chrIdx = struct.unpack('<i', req.read(4))[0]
-            v = struct.unpack('<d', req.read(8))[0]
-    nExpectedValues = struct.unpack('<i', req.read(4))[0]
+            chrIdx = struct.unpack(b'<i', req.read(4))[0]
+            v = struct.unpack(b'<d', req.read(8))[0]
+    nExpectedValues = struct.unpack(b'<i', req.read(4))[0]
     for i in range(nExpectedValues):
         str_ = readcstr(req)
         str_ = readcstr(req)
-        binSize = struct.unpack('<i', req.read(4))[0]
-        nValues = struct.unpack('<i', req.read(4))[0]
+        binSize = struct.unpack(b'<i', req.read(4))[0]
+        nValues = struct.unpack(b'<i', req.read(4))[0]
         for j in range(nValues):
-            v = struct.unpack('<d', req.read(8))[0]
-        nNormalizationFactors = struct.unpack('<i', req.read(4))[0]
+            v = struct.unpack(b'<d', req.read(8))[0]
+        nNormalizationFactors = struct.unpack(b'<i', req.read(4))[0]
         for j in range(nNormalizationFactors):
-            chrIdx = struct.unpack('<i', req.read(4))[0]
-            v = struct.unpack('<d', req.read(8))[0]
-    nEntries = struct.unpack('<i', req.read(4))[0]
+            chrIdx = struct.unpack(b'<i', req.read(4))[0]
+            v = struct.unpack(b'<d', req.read(8))[0]
+    nEntries = struct.unpack(b'<i', req.read(4))[0]
     for i in range(nEntries):
         normtype = readcstr(req)
         if normtype in NORMS and normtype not in chr_footer_info:
             chr_footer_info[normtype] = {}
-        chrIdx = struct.unpack('<i', req.read(4))[0]
+        chrIdx = struct.unpack(b'<i', req.read(4))[0]
         unit1 = readcstr(req)
-        resolution1 = struct.unpack('<i', req.read(4))[0]
-        filePosition = struct.unpack('<q', req.read(8))[0]
-        sizeInBytes = struct.unpack('<i', req.read(4))[0]
+        resolution1 = struct.unpack(b'<i', req.read(4))[0]
+        filePosition = struct.unpack(b'<q', req.read(8))[0]
+        sizeInBytes = struct.unpack(b'<i', req.read(4))[0]
         if (normtype in NORMS and unit1 == unit and resolution1 == resolution):
             chr_footer_info[normtype][chrIdx] = {
                 'position': filePosition,
@@ -167,14 +167,14 @@ def read_footer(req, master, unit, resolution):
 # Return [storeBlockData, myBlockBinCount, myBlockColumnCount]
 def read_matrix_zoom_data(req, myunit, mybinsize, blockMap):
     unit = readcstr(req)
-    temp = struct.unpack('<i', req.read(4))[0]
-    temp2 = struct.unpack('<f', req.read(4))[0]
-    temp2 = struct.unpack('<f', req.read(4))[0]
-    temp2 = struct.unpack('<f', req.read(4))[0]
-    temp2 = struct.unpack('<f', req.read(4))[0]
-    binSize = struct.unpack('<i', req.read(4))[0]
-    blockBinCount = struct.unpack('<i', req.read(4))[0]
-    blockColumnCount = struct.unpack('<i', req.read(4))[0]
+    temp = struct.unpack(b'<i', req.read(4))[0]
+    temp2 = struct.unpack(b'<f', req.read(4))[0]
+    temp2 = struct.unpack(b'<f', req.read(4))[0]
+    temp2 = struct.unpack(b'<f', req.read(4))[0]
+    temp2 = struct.unpack(b'<f', req.read(4))[0]
+    binSize = struct.unpack(b'<i', req.read(4))[0]
+    blockBinCount = struct.unpack(b'<i', req.read(4))[0]
+    blockColumnCount = struct.unpack(b'<i', req.read(4))[0]
     storeBlockData = False
     # for the initial
     myBlockBinCount = -1
@@ -183,11 +183,11 @@ def read_matrix_zoom_data(req, myunit, mybinsize, blockMap):
         myBlockBinCount = blockBinCount
         myBlockColumnCount = blockColumnCount
         storeBlockData = True
-    nBlocks = struct.unpack('<i', req.read(4))[0]
+    nBlocks = struct.unpack(b'<i', req.read(4))[0]
     for b in range(nBlocks):
-        blockNumber = struct.unpack('<i', req.read(4))[0]
-        filePosition = struct.unpack('<q', req.read(8))[0]
-        blockSizeInBytes = struct.unpack('<i', req.read(4))[0]
+        blockNumber = struct.unpack(b'<i', req.read(4))[0]
+        filePosition = struct.unpack(b'<q', req.read(8))[0]
+        blockSizeInBytes = struct.unpack(b'<i', req.read(4))[0]
         entry = dict()
         entry['size'] = blockSizeInBytes
         entry['position'] = filePosition
@@ -200,9 +200,9 @@ def read_matrix_zoom_data(req, myunit, mybinsize, blockMap):
 # Return [blockBinCount, blockColumnCount]
 def read_matrix(req, myFilePos, unit, binsize, blockMap):
     req.seek(myFilePos)
-    c1 = struct.unpack('<i', req.read(4))[0]
-    c2 = struct.unpack('<i', req.read(4))[0]
-    nRes = struct.unpack('<i', req.read(4))[0]
+    c1 = struct.unpack(b'<i', req.read(4))[0]
+    c2 = struct.unpack(b'<i', req.read(4))[0]
+    nRes = struct.unpack(b'<i', req.read(4))[0]
     i = 0
     found = False
     blockBinCount = -1
@@ -254,44 +254,44 @@ def read_block(req, blockNumber, blockMap):
     req.seek(idx['position'])
     compressedBytes = req.read(idx['size'])
     uncompressedBytes = zlib.decompress(compressedBytes)
-    nRecords = struct.unpack('<i', uncompressedBytes[0:4])[0]
+    nRecords = struct.unpack(b'<i', uncompressedBytes[0:4])[0]
     v = []
     global version
     if (version < 7):
         for i in range(nRecords):
-            binX = struct.unpack('<i', uncompressedBytes[(12*i):(12*i+4)])[0]
-            binY = struct.unpack('<i', uncompressedBytes[(12*i+4):(12*i+8)])[0]
-            counts = struct.unpack('<f', uncompressedBytes[(12*i+8):(12*i+12)])[0]
+            binX = struct.unpack(b'<i', uncompressedBytes[(12*i):(12*i+4)])[0]
+            binY = struct.unpack(b'<i', uncompressedBytes[(12*i+4):(12*i+8)])[0]
+            counts = struct.unpack(b'<f', uncompressedBytes[(12*i+8):(12*i+12)])[0]
             record = dict()
             record['binX'] = binX
             record['binY'] = binY
             record['counts'] = counts
             v.append(record)
     else:
-        binXOffset = struct.unpack('<i', uncompressedBytes[4:8])[0]
-        binYOffset = struct.unpack('<i', uncompressedBytes[8:12])[0]
-        useShort = struct.unpack('<b', uncompressedBytes[12:13])[0]
-        type_ = struct.unpack('<b', uncompressedBytes[13:14])[0]
+        binXOffset = struct.unpack(b'<i', uncompressedBytes[4:8])[0]
+        binYOffset = struct.unpack(b'<i', uncompressedBytes[8:12])[0]
+        useShort = struct.unpack(b'<b', uncompressedBytes[12:13])[0]
+        type_ = struct.unpack(b'<b', uncompressedBytes[13:14])[0]
         index = 0
         if (type_ == 1):
-            rowCount = struct.unpack('<h', uncompressedBytes[14:16])[0]
+            rowCount = struct.unpack(b'<h', uncompressedBytes[14:16])[0]
             temp = 16
             for i in range(rowCount):
-                y = struct.unpack('<h', uncompressedBytes[temp:(temp+2)])[0]
+                y = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                 temp = temp+2
                 binY = y + binYOffset
-                colCount = struct.unpack('<h', uncompressedBytes[temp:(temp+2)])[0]
+                colCount = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                 temp = temp+2
                 for j in range(colCount):
-                    x = struct.unpack('<h', uncompressedBytes[temp:(temp+2)])[0]
+                    x = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                     temp = temp+2
                     binX = binXOffset + x
                     if (useShort==0):
-                        c = struct.unpack('<h', uncompressedBytes[temp:(temp+2)])[0]
+                        c = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                         temp = temp+2
                         counts = c
                     else:
-                        counts = struct.unpack('<f', uncompressedBytes[temp:(temp+4)])[0]
+                        counts = struct.unpack(b'<f', uncompressedBytes[temp:(temp+4)])[0]
                         temp = temp+4
                     record = dict()
                     record['binX'] = binX
@@ -301,9 +301,9 @@ def read_block(req, blockNumber, blockMap):
                     index = index + 1
         elif (type_== 2):
             temp = 14
-            nPts = struct.unpack('<i', uncompressedBytes[temp:(temp+4)])[0]
+            nPts = struct.unpack(b'<i', uncompressedBytes[temp:(temp+4)])[0]
             temp = temp+4
-            w = struct.unpack('<h', uncompressedBytes[temp:(temp+2)])[0]
+            w = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
             temp = temp+2
             for i in range(nPts):
                 row = int(i / w)
@@ -311,7 +311,7 @@ def read_block(req, blockNumber, blockMap):
                 bin1 = int(binXOffset + col)
                 bin2 = int(binYOffset + row)
                 if (useShort == 0):
-                    c = struct.unpack('<h', uncompressedBytes[temp:(temp+2)])[0]
+                    c = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                     temp = temp+2
                     if (c != -32768):
                         record = dict()
@@ -321,7 +321,7 @@ def read_block(req, blockNumber, blockMap):
                         v.append(record)
                         index = index + 1
                 else:
-                    counts = struct.unpack('<f',uncompressedBytes[temp:(temp+4)])[0]
+                    counts = struct.unpack(b'<f',uncompressedBytes[temp:(temp+4)])[0]
                     temp=temp+4
                     if (counts != 0x7fc00000):
                         record = dict()
@@ -337,10 +337,10 @@ def read_block(req, blockNumber, blockMap):
 # Return Norm
 def read_normalization_vector(req, entry):
     req.seek(entry['position'])
-    nValues = struct.unpack('<i', req.read(4))[0]
+    nValues = struct.unpack(b'<i', req.read(4))[0]
     value = []
     for i in range(nValues):
-        d = struct.unpack('<d', req.read(8))[0]
+        d = struct.unpack(b'<d', req.read(8))[0]
         value.append(d)
     return value
 
