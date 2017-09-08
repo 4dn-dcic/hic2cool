@@ -719,6 +719,8 @@ def write_indexes(grp, chr_offsets, bin1_offsets, h5opts):
 
 def write_zooms_for_higlass(h5res):
     """
+    NOT CURRENTLY USED
+
     Add max-zoom column needed for higlass, but only if the resolutions are
     successively divisible by two. Otherwise, warn that this file will not be
     higlass compatible
@@ -817,7 +819,6 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_li
         if resolution == 0:
             h5res = h5resolutions.create_group(str(binsize))
         write_cool(h5res, used_chrs, binsize, norm_map, count_map, genome)
-    write_zooms_for_higlass(h5file)
     req.close()
     h5file.close()
 
