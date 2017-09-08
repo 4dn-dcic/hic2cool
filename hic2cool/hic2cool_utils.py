@@ -658,6 +658,8 @@ def create_pixels(count_map, by_chr_offset_map, n_bins):
         if bin1_idx in ordered_counts_by_bins:
             for bin2, count in ordered_counts_by_bins[bin1_idx].items():
                 pixel_2d_array.append([bin1_idx, bin2, count])
+    bin1_offsets.append(len(pixel_2d_array))
+
     return np.array(pixel_2d_array), np.array(bin1_offsets)
 
 
