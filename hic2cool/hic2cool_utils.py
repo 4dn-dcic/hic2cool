@@ -34,7 +34,8 @@ import h5py
 from ._version import __version__
 
 # Global hic normalization types used
-NORMS = ["VC", "VC_SQRT", "KR"]
+global NORMS
+NORMS = []
 
 
 # read function
@@ -44,7 +45,7 @@ def readcstr(f):
     while True:
         b = f.read(1)
         if b is None or b == b"\0":
-            # return str(buf,encoding="utf-8", errors="strict")
+            # return buf.encode("utf-8", errors="ignore")
             return buf.decode("utf-8", errors="ignore")
         else:
             buf += b
@@ -147,14 +148,16 @@ def read_footer(req, master, unit, resolution):
     nEntries = struct.unpack(b'<i', req.read(4))[0]
     for i in range(nEntries):
         normtype = readcstr(req)
-        if normtype in NORMS and normtype not in chr_footer_info:
+        if normtype not in NORMS:
+            NORMS.append(normtype)
+        if normtype not in chr_footer_info:
             chr_footer_info[normtype] = {}
         chrIdx = struct.unpack(b'<i', req.read(4))[0]
         unit1 = readcstr(req)
         resolution1 = struct.unpack(b'<i', req.read(4))[0]
         filePosition = struct.unpack(b'<q', req.read(8))[0]
         sizeInBytes = struct.unpack(b'<i', req.read(4))[0]
-        if (normtype in NORMS and unit1 == unit and resolution1 == resolution):
+        if (unit1 == unit and resolution1 == resolution):
             chr_footer_info[normtype][chrIdx] = {
                 'position': filePosition,
                 'size': sizeInBytes
