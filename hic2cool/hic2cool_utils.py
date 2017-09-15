@@ -25,6 +25,7 @@ information.
 from __future__ import absolute_import, division, print_function, unicode_literals
 from collections import OrderedDict
 import sys
+import time
 import struct
 import zlib
 import math
@@ -46,10 +47,11 @@ def readcstr(f):
         b = f.read(1)
         if b is None or b == b"\0":
             # return buf.encode("utf-8", errors="ignore")
-            return buf.decode("utf-8", errors="ignore")
+            return buf.decode("utf-8")
+        elif b == "":
+            raise EOFError("Buffer unexpectedly empty while trying to read null-terminated string")
         else:
             buf += b
-            # buf.append(b)
 
 
 def read_header(infile):
@@ -798,6 +800,7 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_li
         force_exit(error_str, req, h5file)
     use_resolutions = resolutions if resolution == 0 else [resolution]
     for binsize in use_resolutions:
+        t_start = time.time()
         norm_map = {}
         count_map = {}
         req, pair_footer_info, chr_footer_info = read_footer(
@@ -819,9 +822,19 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_li
                 parse_hic(req, h5file, used_chrs[c1], used_chrs[c2],
                           unit, binsize, covered_chr_pairs, pair_footer_info,
                           chr_footer_info, norm_map, count_map)
+        t_parse = time.time()
         if resolution == 0:
             h5res = h5resolutions.create_group(str(binsize))
         write_cool(h5res, used_chrs, binsize, norm_map, count_map, genome)
+        t_write = time.time()
+        elapsed_parse = t_parse - t_start
+        elapsed_write = t_write - t_parse
+        elapsed_total = t_write - t_start
+        print('Resolution %s took: %s seconds for parse and %s seconds for write (%s total).' % (binsize, elapsed_parse, elapsed_write, elapsed_total))
+        print('Size of norm_map is: ', str(sys.getsizeof(norm_map)))
+        print('Size of count_map is: ', str(sys.getsizeof(count_map)))
+        print('Size of infile is: ', str(sys.getsizeof(req)))
+        print('Size of outfile is: ', str(sys.getsizeof(h5file)))
     req.close()
     h5file.close()
 
