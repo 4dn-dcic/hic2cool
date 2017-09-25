@@ -29,14 +29,30 @@ import time
 import struct
 import zlib
 import math
+from datetime import datetime
 
 import numpy as np
 import h5py
 from ._version import __version__
 
 # Global hic normalization types used
-global NORMS
 NORMS = []
+# determine size of counts chunk
+CHUNK_SIZE = 1000
+# Cooler metadata
+MAGIC = "HDF5::Cooler"
+URL = "https://github.com/4dn-dcic/hic2cool"
+CHROM_DTYPE = np.dtype('S32')
+CHROMID_DTYPE = np.int32
+CHROMSIZE_DTYPE = np.int32
+COORD_DTYPE = np.int32
+BIN_DTYPE = np.int64
+COUNT_DTYPE = np.int32
+CHROMOFFSET_DTYPE = np.int64
+BIN1OFFSET_DTYPE = np.int64
+NORM_DTYPE = np.float64
+PIXEL_FIELDS = ('bin1_id', 'bin2_id', 'count')
+CHUNK_DTYPE = {'names':['bin1_id','bin2_id','count'], 'formats':[BIN_DTYPE, BIN_DTYPE, COUNT_DTYPE]}
 
 
 # read function
@@ -91,7 +107,7 @@ def read_header(infile):
         length = struct.unpack(b'<i', req.read(4))[0]
         if name and length:
             formatted_name = ('chr' + name if ('all' not in name.lower() and
-                              'chr' not in name.lower()) else name)
+                              'chr' not in name.lower()) else name.lower())
             formatted_name = ('chrM' if formatted_name == 'chrMT'
                               else formatted_name)
             chrs[i] = [i, formatted_name, length]
@@ -109,8 +125,7 @@ def read_footer(req, master, unit, resolution):
     contains the file position of info for any given chromosome pair (formatted
     as a string). Chr_footer_info gives chromosome-level size and position info
     relative to the file for each normalization type. This way, this function
-    only has to run once. All of the unused read() code is used to find the
-    correct place in the file, supposedly. This is code from straw.
+    only has to run once. This is code from straw.
 
     """
     pair_footer_info = {}
@@ -350,16 +365,15 @@ def read_normalization_vector(req, entry):
     return value
 
 
-def parse_hic(req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
-              pair_footer_info, chr_footer_info, norm_map, count_map):
+def parse_hic(req, outfile, chr1, chr2, unit, binsize, covered_chr_pairs,
+              pair_footer_info, chr_offset_map, low_mem):
     """
     Adapted from the straw() function in the original straw package.
     Mainly, since all chroms are iterated over, the read_header and read_footer
     functions were placed outside of straw() and made to be reusable across
     any chromosome pair.
-    Main function is to build a norm_map, which contains normalization values
-    for every bin, and a count_map, which is a nested dictionary which contains
-    the contact count for any two bins.
+    As of version 0.4.0, counts and normalization vectors are written to the
+    output cool files in chunks to save memory.
     As of version 0.3.6, all normalization vectors are automatically returned
     to be written in the output cool file.
     """
@@ -367,7 +381,7 @@ def parse_hic(req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
     magic_string = ""
     if unit not in ["BP", "FRAG"]:
         print("Unit specified incorrectly, must be one of <BP/FRAG>")
-        force_exit(warn_string, req, h5file)
+        force_exit(warn_string, req)
     chr1ind = chr1[0]
     chr2ind = chr2[0]
     c1pos1 = 0
@@ -405,13 +419,30 @@ def parse_hic(req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
             'infile header and the actual information it contains.\nThe ' +
             'intersection between ' + chr1[1] + ' and ' + chr2[1] + ' could ' +
             'not be found in the file.')
-        force_exit(warn_string, req, h5file)
+        force_exit(warn_string, req)
     myFilePos = pair_footer_info[chr_key]
     list1 = read_matrix(req, myFilePos, unit, binsize, blockMap)
     blockBinCount = list1[0]
     blockColumnCount = list1[1]
     blockNumbers = get_block_numbers_for_region_from_bin_position(
         regionIndices, blockBinCount, blockColumnCount, c1 == c2)
+    join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE) if not low_mem else None
+    for chunk in generate_counts_chunk(req, c1, c2, blockNumbers, blockMap,
+                                origRegionIndices, chr_offset_map):
+        if low_mem:
+            write_chunk(outfile, binsize, chunk)
+        else:
+            join_chunk = build_chunk(join_chunk, chunk)
+    covered_chr_pairs.append(chr_key)
+    return join_chunk
+
+
+def generate_counts_chunk(req, c1, c2, blockNumbers, blockMap, origRegionIndices, chr_offset_map):
+    """
+    Generator function that assembles chunks of size CHUNK_SIZE, which are
+    2d arrays of size CHUNK_SIZE x 4, in order [bin1, bin2, count, norm values]
+    """
+    counts_chunk = []
     for i_set in (blockNumbers):
         records = read_block(req, i_set, blockMap)
         for j in range(len(records)):
@@ -420,86 +451,117 @@ def parse_hic(req, h5file, chr1, chr2, unit, binsize, covered_chr_pairs,
             x = rec['binX']
             y = rec['binY']
             c = rec['counts']
-            c1_key = str(c1) + ":" + str(x)
-            c2_key = str(c2) + ":" + str(y)
-
-            # set up binmap for c1 and c2
-            if c1_key not in norm_map:
-                norm_map[c1_key] = {}
-            if c2_key not in norm_map:
-                norm_map[c2_key] = {}
-            # iterate through the norms
-            for norm in NORMS:
-                if norm not in norm_map[c1_key]:
-                    c1Norm = read_normalization_vector(req, chr_footer_info[norm][c1])
-                    normBinX = c1Norm[x]
-                    if normBinX != 0.0:
-                        nX = 1 / normBinX
-                    else:
-                        nX = 'inf'
-                    norm_map[c1_key][norm] = nX
-                if norm not in norm_map[c2_key]:
-                    c2Norm = read_normalization_vector(req, chr_footer_info[norm][c2])
-                    normBinY = c2Norm[y]
-                    if normBinY != 0.0:
-                        nY = 1 / normBinY
-                    else:
-                        nY = 'inf'
-                    norm_map[c2_key][norm] = nY
-
+            # bins with offsets considered
+            bin1 = chr_offset_map[c1] + x
+            bin2 = chr_offset_map[c2] + y
             if ((x >= origRegionIndices[0] and x <= origRegionIndices[1] and
                  y >= origRegionIndices[2] and y <= origRegionIndices[3]) or
                  ((c1 == c2) and
                    y >= origRegionIndices[0] and y <= origRegionIndices[1] and
                    x >= origRegionIndices[2] and x <= origRegionIndices[3])):
-                if c1_key not in count_map:
-                    count_map[c1_key] = {}
-                if c2_key in count_map[c1_key]:
-                    print(
-                        '\nWARNING: multiple count entries found for the ' +
-                        'following pixel\n', c1_key, ' and ', c2_key, '   ' +
-                        '(in form chrom_idx:bin)\n')
-                    print('c1:  ',
-                        str(c1) + ':' + str(x * binsize) + '|' +
-                        str(c2) + ':' + str(y * binsize),
-                        '. Conflicting count found: ', c,
-                        '. Will use: ', count_map[c1_key][c2_key])
-                else:
-                    count_map[c1_key][c2_key] = c
-    covered_chr_pairs.append(chr_key)
+                counts_chunk.append([bin1, bin2, c])
+            if len(counts_chunk) >= CHUNK_SIZE:
+                yield chunk_to_array(counts_chunk)
+                counts_chunk = []
+    yield chunk_to_array(counts_chunk)
 
 
-def write_cool(h5res, chr_info, binsize, norm_map, count_map, genome):
+def chunk_to_array(counts_chunk):
     """
-    Use various information to write a cooler file in HDF5 format. Tables
+    Takes the 2d array structure of the chunks and converts to a named
+    2d numpy array with the correct datatypes. This step is important
+    because the structured array is used to sort the datasets in the pixels
+    group in the finalize_resolution_cool function.
+    """
+    if len(counts_chunk) == 0:
+        return np.zeros(shape=0, dtype=CHUNK_DTYPE)
+    intermediate = np.array(counts_chunk)
+    named_arr = np.zeros(len(counts_chunk), dtype=CHUNK_DTYPE)
+    for idx, name in enumerate(CHUNK_DTYPE['names']):
+        named_arr[name] = intermediate[:,idx]
+    # the normalization values
+    return named_arr
+
+
+def build_chunk(total_chunk, counts_chunk):
+    """
+    The non hdf5-storing method of extending the chunks that will be sorted
+    and written to the pixels table in the prepare_chunks_dataset fxn
+    """
+    this_chunk_size = len(counts_chunk)
+    if this_chunk_size == 0:
+        return total_chunk
+    prev_size = total_chunk.shape[0]
+    total_chunk = np.resize(total_chunk, prev_size + this_chunk_size)
+    total_chunk[prev_size:] = counts_chunk
+    return total_chunk
+
+
+def write_chunk(outfile, resolution, counts_chunk):
+    """
+    Write a counts chunk generated by generate_counts_chunk function
+    to the temporary chunks dataset for the given resolution. This temporary
+    dataset is used to generate the final 'pixels' table down the line.
+    """
+    this_chunk_size = len(counts_chunk)
+    if this_chunk_size == 0:
+        return
+    with h5py.File(outfile, "r+") as h5file:
+        h5resolution = h5file[str(resolution)] if multi_res else h5file
+        dataset = h5resolution['chunks']
+        # dsets indices line up with counts_chunk indices
+        prev_size = dataset.shape[0]
+        dataset.resize(prev_size + this_chunk_size, axis=0)
+        dataset[prev_size:] = counts_chunk
+
+
+def initialize_cool(outfile, req, chr_info, genome, resolution, chr_footer_info, low_mem):
+    """
+    Use various information to initialize a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
     For an in-depth explanation of the data structure, please see:
     http://cooler.readthedocs.io/en/latest/datamodel.html
     """
-    grp = h5res.create_group('chroms')
     h5opts = dict(compression='gzip', compression_opts=6)
-    chr_names = write_chroms(grp, chr_info, h5opts)
-    # create the 'bins' table required by cooler_root
-    bin_table, chr_offsets, by_chr_offset_map = create_bins(chr_info, binsize, norm_map)
-    grp = h5res.create_group('bins')
-    write_bins(grp, chr_names, bin_table, h5opts)
-    pixels_table, bin1_offsets = create_pixels(
-        count_map, by_chr_offset_map, len(bin_table))
-    grp = h5res.create_group('pixels')
-    write_pixels(grp, pixels_table, h5opts)
-    grp = h5res.create_group('indexes')
-    write_indexes(grp, chr_offsets, bin1_offsets, h5opts)
-    # update info attributes of the h5res
-    info = {}
-    info['nchroms'] = len(chr_names)
-    info['nbins'] = len(bin_table)
-    info['nnz'] = len(pixels_table)
-    info['bin-type'] = 'fixed'
-    info['bin-size'] = binsize
-    info['format'] = 'HDF5::Cooler'
-    info['generated-by'] = 'hic2cool-' + __version__
-    info['genome-assembly'] = genome
-    h5res.attrs.update(info)
+    with h5py.File(outfile, "a") as h5file:
+        if str(resolution) in h5file.keys():
+            del h5file[str(resolution)]
+        if multi_res:
+            h5resolution = h5file.create_group(str(resolution))
+        else:
+            h5resolution = h5file
+        for key in h5resolution.keys():
+            del h5resolution[key]
+        # chroms
+        grp = h5resolution.create_group('chroms')
+        chr_names = write_chroms(grp, chr_info, h5opts)
+        # bins
+        bin_table, chr_offsets, chr_n_bins, by_chr_offset_map = create_bins(chr_info, resolution)
+        grp = h5resolution.create_group('bins')
+        write_bins(grp, req, chr_names, bin_table, chr_n_bins, chr_footer_info, h5opts)
+        # chunks (a temporary group)
+        n_bins = len(bin_table)
+        if low_mem:
+            prepare_chunks_dataset(h5resolution, n_bins, h5opts)
+        # indexes (just initialize bin1offets)
+        grp = h5resolution.create_group('indexes')
+        write_chrom_offset(grp, chr_offsets, h5opts)
+        # pixels (written later)
+        grp = h5resolution.create_group('pixels')
+        initialize_pixels(grp, n_bins, h5opts)
+        # w.r.t. metadata, each resolution is considered a full file
+        info = {}
+        info['nchroms'] = len(chr_names)
+        info['nbins'] = n_bins
+        info['bin-type'] = 'fixed'
+        info['bin-size'] = resolution
+        info['format'] = MAGIC
+        info['format-url'] = URL
+        info['generated-by'] = 'hic2cool-' + __version__
+        info['genome-assembly'] = genome
+        info['creation-date'] = datetime.now().isoformat()
+        h5resolution.attrs.update(info)
+    return by_chr_offset_map
 
 
 def write_chroms(grp, chrs, h5opts):
@@ -508,70 +570,67 @@ def write_chroms(grp, chrs, h5opts):
     """
     # format chr_names and chr_lengths np arrays
     chr_names = np.array(
-        [val[1] for val in chrs.values() if val[1] != 'All'],
-        dtype=np.dtype('S32'))
+        [val[1] for val in chrs.values() if val[1] != 'all'],
+        dtype=CHROM_DTYPE)
     chr_lengths = np.array(
-        [val[2] for val in chrs.values() if val[1] != 'All'])
+        [val[2] for val in chrs.values() if val[1] != 'all'])
     grp.create_dataset(
         'name',
-        shape=(len(chr_names),), dtype=np.dtype('S32'),
+        shape=(len(chr_names),),
+        dtype=CHROM_DTYPE,
         data=chr_names,
         **h5opts)
     grp.create_dataset(
         'length',
-        shape=(len(chr_names),),
-        dtype=np.int32,
+        shape=(len(chr_lengths),),
+        dtype=CHROMSIZE_DTYPE,
         data=chr_lengths,
         **h5opts)
     return chr_names
 
 
-def create_bins(chrs, binsize, norm_map):
+def create_bins(chrs, binsize):
     """
-    Cooler requires a bin file with each line having <chrId, binStart, binEnd,
-    weight> where binStart and binEnd are bp locations and weight is a float.
+    Cooler requires a bin file with each line having <chrId, binStart, binEnd>
+    where chrId is an enum and binStart and binEnd are bp locations.
     Use the chromosome info from the header along with given binsize to build
-    this table in numpy. Returns the table (with dimensions #bins x 4) and chr
+    this table in numpy. Returns the table (with dimensions #bins x 3) and chr
     offset information with regard to bins
-
     """
     bins_array = []
     offsets = [0]
     by_chr_offsets = {}
+    chr_n_bins = {}
     for c_idx in chrs:
         chr_name = chrs[c_idx][1]
-        if chr_name == 'All':
+        if chr_name == 'all':
             continue
         chr_size = chrs[c_idx][2]
         bin_start = 0
+        chr_bin_count = 0
         while bin_start < chr_size:
             bin_end = bin_start + binsize
             if bin_end > chr_size:
                 bin_end = chr_size
-            bin_norms = {}
-            norm_key = '{}:{}'.format(chrs[c_idx][0],
-                                        int(math.ceil(bin_start/binsize)))
-            # find entries for each norm for this bin
-            for norm in NORMS:
-                norm_val = norm_map.get(norm_key, {}).get(norm, None)
-                if norm_val is not None:
-                    bin_norms[norm] = norm_val
-            bins_array.append([chr_name, bin_start, bin_end, bin_norms])
+            bins_array.append([chr_name, bin_start, bin_end])
+            chr_bin_count += 1
             bin_start = bin_end
         # offsets are the number of bins of all chromosomes prior to this one
         # by_chr_offsets are bin offsets for each chromosome, indexed by chr_idx
         by_chr_offsets[chrs[c_idx][0]] = offsets[-1]
+        chr_n_bins[c_idx] = chr_bin_count
         if len(offsets) < len(chrs):
-            offsets.append(math.ceil(chr_size/binsize) + offsets[-1])
-    return np.array(bins_array), np.array(offsets), by_chr_offsets
+            offsets.append(int(math.ceil(chr_size/binsize) + offsets[-1]))
+    return np.array(bins_array), np.array(offsets), chr_n_bins, by_chr_offsets
 
 
-def write_bins(grp, chroms, bins, h5opts):
+def write_bins(grp, req, chroms, bins, chr_n_bins, chr_footer_info, h5opts):
     """
     Write the bins table, which has columns: chrom, start (in bp), end (in bp),
     and one column for each normalization type, named for the norm type.
     'weight' is a reserved column for `cooler balance`.
     Chrom is an index which corresponds to the chroms table.
+    Also write a dataset for each normalization vector within the hic file.
     """
     n_chroms = len(chroms)
     n_bins = len(bins)
@@ -580,49 +639,143 @@ def write_bins(grp, chroms, bins, h5opts):
     chrom_ids = [idmap[chrom.encode('UTF-8')] for chrom in bins[:, 0]]
     starts = [int(val) for val in bins[:, 1]]
     ends = [int(val) for val in bins[:, 2]]
-    norms = {}
+    enum_dtype = h5py.special_dtype(enum=(CHROMID_DTYPE, idmap))
+    # Store bins
+    grp.create_dataset('chrom',
+                       shape=(n_bins,),
+                       dtype=enum_dtype,
+                       data=chrom_ids,
+                       **h5opts)
+    grp.create_dataset('start',
+                       shape=(n_bins,),
+                       dtype=COORD_DTYPE,
+                       data=starts,
+                       **h5opts)
+    grp.create_dataset('end',
+                       shape=(n_bins,),
+                       dtype=COORD_DTYPE,
+                       data=ends,
+                       **h5opts)
+    # write columns for normalization vectors
     for norm in NORMS:
-        norms[norm] = [float(val[norm]) if norm in val else np.inf for val in bins[:, 3]]
-    enum_dtype = h5py.special_dtype(enum=(np.int32, idmap))
-    grp.create_dataset(
-        'chrom',
-        shape=(n_bins,),
-        dtype=enum_dtype,
-        data=chrom_ids,
-        **h5opts)
-    grp.create_dataset(
-        'start',
-        shape=(n_bins,),
-        dtype=np.int32,
-        data=starts,
-        **h5opts)
-    grp.create_dataset(
-        'end',
-        shape=(n_bins,),
-        dtype=np.int32,
-        data=ends,
-        **h5opts)
-    for norm in NORMS:
+        norm_data = []
+        for chr_idx in chr_n_bins:
+            if chr_idx not in chr_footer_info[norm]:
+                error_str = (
+                    'ERROR. Normalization vector %s does not exist for chr idx %s.'
+                    '\nThis chromosome may not exist in the hic file. Try running'
+                    ' with the "-e" option to exclude MT.' % (norm, chr_idx))
+                force_exit(error_str, req)
+            norm_vector = read_normalization_vector(req, chr_footer_info[norm][chr_idx])
+            chr_bin_end = chr_n_bins[chr_idx]
+            # possible issue to look into
+            # norm_vector returned by read_normalization_vector has an extra
+            # entry at the end (0.0) that is never used and causes the
+            # norm vectors to be longer than n_bins for a given chr
+            # restrict the length of norm_vector to chr_bin_end for now.
+            norm_data.extend(list(map(norm_convert, norm_vector[:chr_bin_end])))
+        if len(norm_data) != n_bins:
+            error_str = (
+                'ERROR. Length of normalization vector %s does not match the'
+                ' number of bins.\nThis is likely a problem with the hic file' % (norm))
+            force_exit(error_str, req)
         grp.create_dataset(
             norm,
-            shape=(n_bins,),
-            dtype=np.float64,
-            data=norms[norm],
+            shape=(len(norm_data),),
+            dtype=NORM_DTYPE,
+            data=np.array(norm_data, dtype=NORM_DTYPE),
             **h5opts)
 
 
-def create_pixels(count_map, by_chr_offset_map, n_bins):
+def norm_convert(val):
     """
-    Converts the countmap dumped by from the hic file into a 2D pixels array,
+    Convert between hic and cool normalization values
+    """
+    if val != 0.0:
+        return 1 / val
+    else:
+        return np.inf
+
+
+def prepare_chunks_dataset(grp, n_bins, h5opts):
+    """
+    Temporary dataset that is deleted before cooler file is finalized.
+    Stores the chunks that are iteratively generated from the hic file.
+    See generate_counts_chunk function for chunk details.
+    """
+    # max_size = n_bins * (n_bins - 1) // 2 + n_bins
+    max_size = None
+    init_size = 0
+    grp.create_dataset(
+        'chunks',
+        shape=(init_size,),
+        maxshape=(max_size,),
+        chunks=(CHUNK_SIZE,),
+        dtype=CHUNK_DTYPE,
+        **h5opts)
+
+
+def write_chrom_offset(grp, chr_offsets, h5opts):
+    """
+    Write the chrom offset information (bin offset information written later)
+    """
+    grp.create_dataset(
+        'chrom_offset',
+        shape=(len(chr_offsets),),
+        dtype=CHROMOFFSET_DTYPE,
+        data=chr_offsets,
+        **h5opts)
+
+
+def initialize_pixels(grp, n_bins, h5opts):
+    """
+    Initialize the pixels datasets with a given max_size (expression from
+    cooler). These are resizable datasets that are chunked with size of
+    CHUNK_SIZE and initialized with lenth of init_size.
+    """
+    # max_size = n_bins * (n_bins - 1) // 2 + n_bins
+    max_size = None
+    init_size = 0
+    grp.create_dataset('bin1_id',
+                       dtype=BIN_DTYPE,
+                       shape=(init_size,),
+                       maxshape=(max_size,),
+                       **h5opts)
+    grp.create_dataset('bin2_id',
+                       dtype=BIN_DTYPE,
+                       shape=(init_size,),
+                       maxshape=(max_size,),
+                       **h5opts)
+    grp.create_dataset('count',
+                       dtype=COUNT_DTYPE,
+                       shape=(init_size,),
+                       maxshape=(max_size,),
+                       **h5opts)
+
+
+def write_bin1_offset(grp, bin1_offsets, h5opts):
+    """
+    Write the bin1_offset information
+    """
+    grp.create_dataset(
+        'bin1_offset',
+        shape=(len(bin1_offsets),),
+        dtype=BIN1OFFSET_DTYPE,
+        data=bin1_offsets,
+        **h5opts)
+
+
+def write_pixels_chunk(outfile, resolution, chunks, low_mem):
+    """
+    Converts the chunks dumped from the hic file into a 2D pixels array,
     with columns bin1 (int idx), bin2 (int idx), and count (int).
-    An offset array is also generated, which gives the number of bins preceding
+    An offsets array is also generated, which gives the number of bins preceding
     any given bin (with regard to bin1 position). Thus, bin1[0] will always have
     an offset of 0 and bin1[1] will have an offset equal to the number of times
     bin1=0.
     The pixel array is sorted by bin1 first, then bin2. The following could be
     a 2D pixel array (where the columns refer to bin1, bin2, and count
     respectively)
-
     0   0   3
     0   1   1
     0   2   0
@@ -631,95 +784,104 @@ def create_pixels(count_map, by_chr_offset_map, n_bins):
     1   3   2
     2   3   1
 
+    After pixels group has been written and bin1_offsets written within
+    the indexes group, the temporary chunks dataset is deleted.
     """
-    pixel_2d_array = []
-    bin1_offsets = []
-    # order count_map by bin2 then bin1
-    for key in count_map:
-        # turn inner bin2 keys from chr_key to bin number
-        converted_bin2 = {
-            chr_key_to_bin(k, by_chr_offset_map): v
-                for k, v in count_map[key].items()
-        }
-        # order them by bin number
-        count_map[key] = OrderedDict(
-            sorted(converted_bin2.items(), key=lambda t: t[0]))
-    # do the same for bin1 (chr_key to bin number)
-    converted_bin1 = {
-        chr_key_to_bin(k, by_chr_offset_map): v
-            for k, v in count_map.items()
-    }
-    ordered_counts_by_bins = OrderedDict(
-        sorted(converted_bin1.items(), key=lambda t: t[0]))
-
-    # build the 2d array. Columns are [bin1, bin2, count]. Sorted by bin1 then
-    # bin2 (ascending order)
-    # loop through all possible bin indices, adding them to the pixel table if
-    # they are a valid bin1_idx every index is added
-    for bin1_idx in range(0, n_bins):
-        # append the row offset for this bin1 in the pixels table
-        bin1_offsets.append(len(pixel_2d_array))
-        # loop through bin2s and counts
-        if bin1_idx in ordered_counts_by_bins:
-            for bin2, count in ordered_counts_by_bins[bin1_idx].items():
-                pixel_2d_array.append([bin1_idx, bin2, count])
-    bin1_offsets.append(len(pixel_2d_array))
-
-    return np.array(pixel_2d_array), np.array(bin1_offsets)
+    h5opts = dict(compression='gzip', compression_opts=6)
+    with h5py.File(outfile, "r+") as h5file:
+        h5resolution = h5file[str(resolution)] if multi_res else h5file
+        n_bins = h5resolution.attrs['nbins']
+        # do I have to load this into memory?
+        if low_mem:
+            chunks = h5resolution['chunks'].value
+        chunks.sort(order=['bin1_id', 'bin2_id'])
+        nnz = chunks.shape[0]
+        # write ordered chunk to pixels
+        grp = h5resolution['pixels']
+        for set_name in ['bin1_id', 'bin2_id', 'count']:
+            dataset = grp[set_name]
+            prev_size = dataset.shape[0]
+            dataset.resize(prev_size + nnz, axis=0)
+            dataset[prev_size:] = chunks[set_name]
+        # reset temporary chunks dataset
+        if 'chunks' in h5resolution.keys():
+            del h5resolution['chunks']
+            prepare_chunks_dataset(h5resolution, n_bins, h5opts)
 
 
-def chr_key_to_bin(key, offset_map):
+def finalize_resolution_cool(outfile, resolution):
     """
-    Function made to covert chr_keys (in form <chridx>:<bin_idx>) to an offset
-    bin idx using the offset_map (which uses chr_idxs as keys)
+    Finally, remove the chunks dataset and write bin1_offsets and nnz attr
+    for one resolution in the cool file
     """
-    split_key = key.strip().split(':')
-    chr_idx = int(split_key[0])
-    offset = offset_map[chr_idx]
-    return offset + int(split_key[1])
+    h5opts = dict(compression='gzip', compression_opts=6)
+    with h5py.File(outfile, "r+") as h5file:
+        h5resolution = h5file[str(resolution)] if multi_res else h5file
+        if 'chunks' in h5resolution.keys():
+            del h5resolution['chunks']
+        nnz = h5resolution['pixels']['count'].shape[0]
+        n_bins = h5resolution.attrs['nbins']
+        # now we need bin offsets
+        # adapated from _writer.py in cooler
+        offsets = np.zeros(n_bins + 1, dtype=BIN1OFFSET_DTYPE)
+        curr_val = 0
+        for start, length, value in zip(*rlencode(h5resolution['pixels']['bin1_id'], 1000000)):
+            offsets[curr_val:value + 1] = start
+            curr_val = value + 1
+        offsets[curr_val:] = nnz
+        write_bin1_offset(h5resolution['indexes'], offsets, h5opts)
+        # update attributes with nnz
+        info = {'nnz': nnz}
+        h5resolution.attrs.update(info)
 
 
-def write_pixels(grp, pixels, h5opts):
+def rlencode(array, chunksize=None):
     """
-    Write the pixel table. Columns are bin1ID, bin2ID, count
-    """
-    n_pixels = len(pixels)
-    grp.create_dataset(
-        'bin1_id',
-        shape=(n_pixels,),
-        dtype=np.int64,
-        data=pixels[:, 0],
-        **h5opts)
-    grp.create_dataset(
-        'bin2_id',
-        shape=(n_pixels,),
-        dtype=np.int64,
-        data=pixels[:, 1],
-        **h5opts)
-    grp.create_dataset(
-        'count',
-        shape=(n_pixels,),
-        dtype=np.int32,
-        data=pixels[:, 2],
-        **h5opts)
+    Run length encoding.
+    Based on http://stackoverflow.com/a/32681075, which is based on the rle
+    function from R.
 
+    TAKEN FROM COOLER
 
-def write_indexes(grp, chr_offsets, bin1_offsets, h5opts):
+    Parameters
+    ----------
+    x : 1D array_like
+        Input array to encode
+    dropna: bool, optional
+        Drop all runs of NaNs.
+
+    Returns
+    -------
+    start positions, run lengths, run values
+
     """
-    Write the chrom offset information and bin offset information
-    """
-    grp.create_dataset(
-        'chrom_offset',
-        shape=(len(chr_offsets),),
-        dtype=np.int32,
-        data=chr_offsets,
-        **h5opts)
-    grp.create_dataset(
-        'bin1_offset',
-        shape=(len(bin1_offsets),),
-        dtype=np.int32,
-        data=bin1_offsets,
-        **h5opts)
+    where = np.flatnonzero
+    if not isinstance(array, h5py.Dataset):
+        array = np.asarray(array)
+    n = len(array)
+    if n == 0:
+        return (np.array([], dtype=int),
+                np.array([], dtype=int),
+                np.array([], dtype=array.dtype))
+
+    if chunksize is None:
+        chunksize = n
+
+    starts, values = [], []
+    last_val = np.nan
+    for i in range(0, n, chunksize):
+        x = array[i:i+chunksize]
+        locs = where(x[1:] != x[:-1]) + 1
+        if x[0] != last_val:
+            locs = np.r_[0, locs]
+        starts.append(i + locs)
+        values.append(x[locs])
+        last_val = x[-1]
+    starts = np.concatenate(starts)
+    lengths = np.diff(np.r_[starts, n])
+    values = np.concatenate(values)
+
+    return starts, lengths, values
 
 
 def write_zooms_for_higlass(h5res):
@@ -757,7 +919,7 @@ def write_zooms_for_higlass(h5res):
         h5res[str(i)] = h5py.SoftLink('/resolutions/{}'.format(res))
 
 
-def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_line=False):
+def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, low_mem=False, command_line=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -768,6 +930,8 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_li
     <resolution> int bp bin size. If 0, use all. Defaults to 0.
                 Final .cool structure will change depending on this param (see README)
     <exclude_MT> bool. If True, ignore MT contacts. Defaults to False.
+    <low_mem> bool. If True, attempt to reduce memory used by writing pixel chunks
+            to an intermediate dataset in the output cool file.
     <command_line> bool. True if executing from run_hic.py. Prompts hic headers
                 be printed to stdout.
     """
@@ -785,66 +949,59 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, command_li
         print('Genome: ', genome)
     if exclude_MT:  # remove chr25, which is MT, if this flag is set
         used_chrs.pop(25, None)
-    if resolution == 0:  # use multi-res formatting
-        h5file = h5py.File(outfile, 'w')
-        h5resolutions = h5file.create_group('resolutions')
-    else:
-        h5file = h5py.File(outfile, 'w')
-        h5res = h5file
     # ensure user input binsize is a resolution supported by the hic file
     if resolution != 0 and resolution not in resolutions:
         error_str = (
             'ERROR. Given binsize (in bp) is not a supported resolution in '
             'this file.\nPlease use 0 (all resolutions) or use one of: ' +
-            resolutions)
-        force_exit(error_str, req, h5file)
+            str(resolutions))
+        force_exit(error_str, req)
     use_resolutions = resolutions if resolution == 0 else [resolution]
+    global multi_res
+    multi_res = resolution == 0
     for binsize in use_resolutions:
         t_start = time.time()
-        norm_map = {}
-        count_map = {}
         req, pair_footer_info, chr_footer_info = read_footer(
             req, masteridx, unit, binsize)
+        # initialize cooler file. return per resolution bin offset maps
+        chr_offset_map = initialize_cool(outfile, req, used_chrs, genome,
+                                        binsize, chr_footer_info, low_mem)
         covered_chr_pairs = []
-        for chr_x in used_chrs:
-            if used_chrs[chr_x][1].lower() == 'all':
+        for chr_a in used_chrs:
+            total_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE) if not low_mem else None
+            if used_chrs[chr_a][1].lower() == 'all':
                 continue
-            for chr_y in used_chrs:
-                if used_chrs[chr_y][1].lower() == 'all':
+            for chr_b in used_chrs:
+                if used_chrs[chr_b][1].lower() == 'all':
                     continue
-                c1 = min(chr_x, chr_y)
-                c2 = max(chr_x, chr_y)
+                c1 = min(chr_a, chr_b)
+                c2 = max(chr_a, chr_b)
                 # ensure this is true
                 # since matrices are upper triangular, no need to cover c1-c2
                 # and c2-c1 reciprocally
                 if str(c1) + "_" + str(c2) in covered_chr_pairs:
                     continue
-                parse_hic(req, h5file, used_chrs[c1], used_chrs[c2],
+                tmp_chunk = parse_hic(req, outfile, used_chrs[c1], used_chrs[c2],
                           unit, binsize, covered_chr_pairs, pair_footer_info,
-                          chr_footer_info, norm_map, count_map)
+                          chr_offset_map, low_mem)
+                if not low_mem:
+                    total_chunk = build_chunk(total_chunk, tmp_chunk)
+                    del tmp_chunk
+            # write at the end of every chr_a
+            write_pixels_chunk(outfile, binsize, total_chunk, low_mem)
+        # finalize to remove chunks and write a bit of metadata
+        finalize_resolution_cool(outfile, binsize)
         t_parse = time.time()
-        if resolution == 0:
-            h5res = h5resolutions.create_group(str(binsize))
-        write_cool(h5res, used_chrs, binsize, norm_map, count_map, genome)
-        t_write = time.time()
         elapsed_parse = t_parse - t_start
-        elapsed_write = t_write - t_parse
-        elapsed_total = t_write - t_start
-        print('Resolution %s took: %s seconds for parse and %s seconds for write (%s total).' % (binsize, elapsed_parse, elapsed_write, elapsed_total))
-        print('Size of norm_map is: ', str(sys.getsizeof(norm_map)))
-        print('Size of count_map is: ', str(sys.getsizeof(count_map)))
-        print('Size of infile is: ', str(sys.getsizeof(req)))
-        print('Size of outfile is: ', str(sys.getsizeof(h5file)))
+        print('Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
-    h5file.close()
 
 
-def force_exit(message, req, h5file):
+def force_exit(message, req):
     """
     Exit the program due to some error. Print out message and close the given
     input files.
     """
     req.close()
-    h5file.close()
     print(message, file=sys.stderr)
     sys.exit()

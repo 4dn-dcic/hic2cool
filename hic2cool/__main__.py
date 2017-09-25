@@ -31,12 +31,16 @@ def main():
         "-e", "--exclude_MT",
         help="if used, exclude the mitochondria (MT) from the output",
         action="store_true")
+    parser.add_argument(
+        "-l", "--low_mem",
+        help="if used, use less RAM at the expense of runtime",
+        action="store_true")
     args = parser.parse_args()
 
     # these parameters adapted from theaidenlab/straw
     # KR is default normalization type and BP is the unit for binsize
     hic2cool_convert(args.infile, args.outfile, args.resolution,
-                     args.exclude_MT, True)
+                     args.exclude_MT, args.low_mem, True)
 
 
 if __name__ == '__main__':

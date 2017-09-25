@@ -2,8 +2,7 @@
 
 A converter between .hic files (from juicer) and .cool files (for cooler).
 
-Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as a simple imported package or a stand-alone Python file. Written by Carl Vitzthum and directed by Soo Lee of the HMS DBMI Park lab. Special thanks to Peter Kerpedjiev and Nezar Abdennur.
-Originally published 1/26/17.
+Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as a simple imported package or a stand-alone Python file.
 
 The .hic parsing code is based off the straw project by Neva C. Durand and Yue Wu (https://github.com/theaidenlab/straw). The h5py structure used for .cool file writing is based off code from the cooler repository (https://github.com/mirnylab/cooler).
 
@@ -15,7 +14,7 @@ $ pip install hic2cool
 Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in /test/test.py.
 ```
 from hic2cool import hic2cool_convert
-hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional boolean to exclude MT>)
+hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional boolean to exclude MT>, <optional low memory mode>)
 ```
 Please note that you need to install cooler (pip install cooler) to run the test package. It is included in requirements.txt.
 
@@ -47,14 +46,16 @@ Arguments:
 
 **-e**, or --exclude_MT, ignores the mitochondrial contacts if provided.
 
+**-l**, or --low_mem, uses less memory to run but takes longer.
+
 Running hic2cool from the command line will cause some helpful information about the hic file to be printed to stdout.
 
 
 
 ## Output file structure
-If you elect to use all resolutions, a multi-res .cool file will be produced. This changes the hdf5 structure of the file from a typical .cool file. Namely, all of the information needed for a complete cooler file is stored in separate hdf5 groups named by resolution. The hdf5 hierarchy is organized as such:
+If you elect to use all resolutions, a multi-res .cool file will be produced. This changes the hdf5 structure of the file from a typical .cool file. Namely, all of the information needed for a complete cooler file is stored in separate hdf5 groups named by the individual resolutions. The hdf5 hierarchy is organized as such:
 
-File --> 'resolutions' --> '###' (where ### is the resolution in bp).
+File --> '###' (where ### is the resolution in bp).
 For example, see the code below that generates a multi-res file and then accesses the specific resolution of 10000 bp.
 
 ```
@@ -63,7 +64,7 @@ import cooler
 ### using 0 triggers a mult-res output
 hic2cool_convert('my_hic.hic', 'my_cool.cool', 0, 'KR')
 ### will give you the cooler object with resolution = 10000 bp
-my_cooler = cooler.Cooler('out.cool::resolutions/10000')
+my_cooler = cooler.Cooler('my_cool.cool::10000')
 ```
 
 When using only one resolution, the .cool file produced stores all the necessary information at the top level. Thus, organization in the multi-res format is not needed. The code below produces a file with one resolution, 10000 bp, and opens it with a cooler object.
@@ -71,6 +72,7 @@ When using only one resolution, the .cool file produced stores all the necessary
 ```
 from hic2cool import hic2cool_convert
 import cooler
+### giving a specific resolution below (e.g. 10000) triggers a single-res output
 hic2cool_convert('my_hic.hic', 'my_cool.cool', 10000, 'KR')
 h5file = h5py.File('my_cool.cool', 'r')
 ### will give you the cooler object with resolution = 10000 bp
@@ -79,6 +81,8 @@ my_cooler = cooler.Cooler(h5file)
 
 ## Changelog:
 
+### 0.4.0
+(Ongoing) many misc. bug fixes, major improvements on runtime and memory usage.
 ### 0.3.7
 Fixed issue with bin1_offset not containing final entry (should be length nbins + 1).
 ### 0.3.6
@@ -95,3 +99,14 @@ Changed output file structure for single resolution file. Resolved an issue wher
 Added .travis.yml for automated testing. Changed command line running scheme. Python3 fix in hic2cool_utils.
 ### 0.3.0
 Added multi-resolution format to output cool files. Setup argparse. Improved speed. Added tests for new resolutions format.
+
+## Contributors
+Written by Carl Vitzthum (1), Nezar Abdennur (2), Soo Lee (1), and Peter Kerpedjiev (3).
+
+(1) Park lab, Harvard Medical School DBMI
+
+(2) Mirny lab, MIT
+
+(3) Gehlenborg lab, Harvard Medical School DBMI
+
+Originally published 1/26/17.
