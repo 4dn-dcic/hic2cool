@@ -426,10 +426,13 @@ def parse_hic(req, outfile, chr1, chr2, unit, binsize, covered_chr_pairs,
     blockColumnCount = list1[1]
     blockNumbers = get_block_numbers_for_region_from_bin_position(
         regionIndices, blockBinCount, blockColumnCount, c1 == c2)
+    # join chunk is used in the non low_mem version. it is an np array
+    # that will contain the entire list of c1/c2 counts
     join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE) if not low_mem else None
     for chunk in generate_counts_chunk(req, c1, c2, blockNumbers, blockMap,
                                 origRegionIndices, chr_offset_map):
         if low_mem:
+            # write this chunk to a temporary dataset
             write_chunk(outfile, binsize, chunk)
         else:
             join_chunk = build_chunk(join_chunk, chunk)
