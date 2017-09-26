@@ -42,7 +42,7 @@ Arguments:
 
 **outfile** is a .cool output file.
 
-**resolution** is a integer bp resolution supported by the hic file. *Please note* that only resolutions contained within the original hic file can be used. If 0 is given, will use all resolutions to build a multi-resolution file. Default is 0.
+**-r**, or --resolution, is a integer bp resolution supported by the hic file. *Please note* that only resolutions contained within the original hic file can be used. If 0 is given, will use all resolutions to build a multi-resolution file. Default is 0.
 
 **-e**, or --exclude_MT, ignores the mitochondrial contacts if provided.
 
@@ -62,7 +62,7 @@ For example, see the code below that generates a multi-res file and then accesse
 from hic2cool import hic2cool_convert
 import cooler
 ### using 0 triggers a mult-res output
-hic2cool_convert('my_hic.hic', 'my_cool.cool', 0, 'KR')
+hic2cool_convert('my_hic.hic', 'my_cool.cool', 0)
 ### will give you the cooler object with resolution = 10000 bp
 my_cooler = cooler.Cooler('my_cool.cool::10000')
 ```
@@ -73,7 +73,7 @@ When using only one resolution, the .cool file produced stores all the necessary
 from hic2cool import hic2cool_convert
 import cooler
 ### giving a specific resolution below (e.g. 10000) triggers a single-res output
-hic2cool_convert('my_hic.hic', 'my_cool.cool', 10000, 'KR')
+hic2cool_convert('my_hic.hic', 'my_cool.cool', 10000)
 h5file = h5py.File('my_cool.cool', 'r')
 ### will give you the cooler object with resolution = 10000 bp
 my_cooler = cooler.Cooler(h5file)
