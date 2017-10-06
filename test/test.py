@@ -33,6 +33,7 @@ def captured_output():
 
 class TestRunHic(unittest.TestCase):
     infile_name = 'test/test_data/test_hic.hic'
+    outfile_name_no_exclude = 'test/test_data/test_cool_wo_e_100000.cool'
     outfile_name = 'test/test_data/test_cool_100000.cool'
     outfile_name2 = 'test/test_data/test_cool_2500000.cool'
     outfile_name_all = 'test/test_data/test_cool_multi_res.cool'
@@ -42,7 +43,7 @@ class TestRunHic(unittest.TestCase):
 
     def test_run_without_exclude_missing(self):
         with captured_output() as (out, err):
-            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
+            hic2cool_convert(self.infile_name, self.outfile_name_no_exclude, self.binsize)
         read_out = out.getvalue().strip()
         self.assertTrue('WARNING' in read_out)
         self.assertFalse('INFO' in read_out)
