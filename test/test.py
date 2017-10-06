@@ -40,40 +40,41 @@ class TestRunHic(unittest.TestCase):
     binsize2 = 2500000
 
 
-    def test_run_MT_error(self):
+    def test_run_without_exclude_missing(self):
         with captured_output() as (out, err):
-            # this should fail, because test file is missing chrMT
-            # and excludeMT was not specified
-            with self.assertRaises(SystemExit):
-                hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
+            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
         read_err = err.getvalue().strip()
-        self.assertTrue('ERROR' in read_err)
+        self.assertTrue('WARNING' in read_err)
+        self.assertFalse('INFO' in read_err)
 
 
-    def test_run_exclude_MT_100000(self):
+    def test_run_exclude_missing_100000(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, True)
         read_err = err.getvalue().strip()
-        self.assertFalse('ERROR' in read_err)
+        self.assertFalse('WARNING' in read_err)
+        self.assertTrue('INFO' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name))
 
 
-    def test_run_exclude_MT_2500000(self):
+    def test_run_exclude_missings_2500000(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2, True)
         read_err = err.getvalue().strip()
-        self.assertFalse('ERROR' in read_err)
+        self.assertFalse('WARNING' in read_err)
+        self.assertTrue('INFO' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name2))
 
 
-    def test_run_exclude_MT_multi_res(self):
+    def test_run_exclude_missing_multi_res(self):
         # run hic2cool for all resolutions in the hic file
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
             hic2cool_convert(self.infile_name, self.outfile_name_all, 0, True)
         read_err = err.getvalue().strip()
-        self.assertFalse('ERROR' in read_err)
+        self.assertFalse('WARNING' in read_err)
+        self.assertTrue('INFO' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name_all))
 
 
@@ -93,7 +94,7 @@ class TestWithCooler(unittest.TestCase):
         # cooler info has 8 entries
         self.assertEqual(len(cool.info), 10)
         self.assertTrue(__version__ in cool.info['generated-by'])
-        self.assertEqual(len(cool.chromnames), 24) #MT is excluded
+        self.assertEqual(len(cool.chromnames), 23) #all and MT are excluded
         self.assertEqual(self.binsize, cool.info['bin-size'])
         matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25100000')
         self.assertEqual(matrix_res.shape, (1,1))
