@@ -28,8 +28,8 @@ def main():
         type=int,
         default=0)
     parser.add_argument(
-        "-e", "--exclude_MT",
-        help="if used, exclude the mitochondria (MT) from the output",
+        "-e", "--exclude_missing",
+        help="if used, allow for missing chromosome contacts",
         action="store_true")
     parser.add_argument(
         "-l", "--low_mem",
@@ -40,7 +40,7 @@ def main():
     # these parameters adapted from theaidenlab/straw
     # KR is default normalization type and BP is the unit for binsize
     hic2cool_convert(args.infile, args.outfile, args.resolution,
-                     args.exclude_MT, args.low_mem, True)
+                     args.exclude_missing, args.low_mem, True)
 
 
 if __name__ == '__main__':

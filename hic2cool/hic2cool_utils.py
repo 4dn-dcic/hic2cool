@@ -29,6 +29,7 @@ import time
 import struct
 import zlib
 import math
+import copy
 from datetime import datetime
 
 import numpy as np
@@ -130,6 +131,7 @@ def read_footer(req, master, unit, resolution):
     """
     pair_footer_info = {}
     chr_footer_info = {}
+    found_chrs = []
     req.seek(master)
     nBytes = struct.unpack(b'<i', req.read(4))[0]
     nEntries = struct.unpack(b'<i', req.read(4))[0]
@@ -167,20 +169,21 @@ def read_footer(req, master, unit, resolution):
         normtype = readcstr(req)
         if normtype not in NORMS:
             NORMS.append(normtype)
-        if normtype not in chr_footer_info:
-            chr_footer_info[normtype] = {}
         chrIdx = struct.unpack(b'<i', req.read(4))[0]
+        if chrIdx not in chr_footer_info:
+            chr_footer_info[chrIdx] = {}
+            found_chrs.append(chrIdx)
         unit1 = readcstr(req)
         resolution1 = struct.unpack(b'<i', req.read(4))[0]
         filePosition = struct.unpack(b'<q', req.read(8))[0]
         sizeInBytes = struct.unpack(b'<i', req.read(4))[0]
         if (unit1 == unit and resolution1 == resolution):
-            chr_footer_info[normtype][chrIdx] = {
+            chr_footer_info[chrIdx][normtype] = {
                 'position': filePosition,
                 'size': sizeInBytes
             }
 
-    return req, pair_footer_info, chr_footer_info
+    return req, pair_footer_info, chr_footer_info, found_chrs
 
 
 # FUN(fin, unit, resolution, blockMap)
@@ -378,6 +381,9 @@ def parse_hic(req, outfile, chr1, chr2, unit, binsize, covered_chr_pairs,
     to be written in the output cool file.
     """
     blockMap = {}
+    # join chunk is used in the non low_mem version. it is an np array
+    # that will contain the entire list of c1/c2 counts
+    join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE) if not low_mem else None
     magic_string = ""
     if unit not in ["BP", "FRAG"]:
         print("Unit specified incorrectly, must be one of <BP/FRAG>")
@@ -415,20 +421,17 @@ def parse_hic(req, outfile, chr1, chr2, unit, binsize, covered_chr_pairs,
         pair_footer_info[chr_key]
     except KeyError:
         warn_string = (
-            'ERROR. There is a discrepancy between the chrs declared in the ' +
-            'infile header and the actual information it contains.\nThe ' +
-            'intersection between ' + chr1[1] + ' and ' + chr2[1] + ' could ' +
-            'not be found in the file.')
-        force_exit(warn_string, req)
+            'WARNING. The intersection between %s and %s could '
+            'not be found in the file.' % (chr1[1], chr2[1]))
+        print(warn_string)
+        return join_chunk
+        # force_exit(warn_string, req)
     myFilePos = pair_footer_info[chr_key]
     list1 = read_matrix(req, myFilePos, unit, binsize, blockMap)
     blockBinCount = list1[0]
     blockColumnCount = list1[1]
     blockNumbers = get_block_numbers_for_region_from_bin_position(
         regionIndices, blockBinCount, blockColumnCount, c1 == c2)
-    # join chunk is used in the non low_mem version. it is an np array
-    # that will contain the entire list of c1/c2 counts
-    join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE) if not low_mem else None
     for chunk in generate_counts_chunk(req, c1, c2, blockNumbers, blockMap,
                                 origRegionIndices, chr_offset_map):
         if low_mem:
@@ -663,14 +666,16 @@ def write_bins(grp, req, chroms, bins, chr_n_bins, chr_footer_info, h5opts):
     for norm in NORMS:
         norm_data = []
         for chr_idx in chr_n_bins:
-            if chr_idx not in chr_footer_info[norm]:
-                error_str = (
-                    'ERROR. Normalization vector %s does not exist for chr idx %s.'
-                    '\nThis chromosome may not exist in the hic file. Try running'
-                    ' with the "-e" option to exclude MT.' % (norm, chr_idx))
-                force_exit(error_str, req)
-            norm_vector = read_normalization_vector(req, chr_footer_info[norm][chr_idx])
             chr_bin_end = chr_n_bins[chr_idx]
+            if chr_idx not in chr_footer_info:
+                print('WARNING. Normalization vector %s does not exist for chr idx %s.'
+                    '\nThis chromosome may not exist in the hic file. Run'
+                    ' with the "-e" option to exclude missing chromosomes.' % (norm, chr_idx))
+                # add a vector of 0's with length equal to chr_n_bins[chr_idx]
+                norm_data.extend([0]*chr_bin_end)
+                continue
+                # force_exit(error_str, req)
+            norm_vector = read_normalization_vector(req, chr_footer_info[chr_idx][norm])
             # possible issue to look into
             # norm_vector returned by read_normalization_vector has an extra
             # entry at the end (0.0) that is never used and causes the
@@ -922,7 +927,7 @@ def write_zooms_for_higlass(h5res):
         h5res[str(i)] = h5py.SoftLink('/resolutions/{}'.format(res))
 
 
-def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, low_mem=False, command_line=False):
+def hic2cool_convert(infile, outfile, resolution=0, exclude_missing=False, low_mem=False, command_line=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -932,7 +937,8 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, low_mem=Fa
     <outfile> str .cool output filename
     <resolution> int bp bin size. If 0, use all. Defaults to 0.
                 Final .cool structure will change depending on this param (see README)
-    <exclude_MT> bool. If True, ignore MT contacts. Defaults to False.
+    <exclude_missing> bool. If True, remove missing chromosomes from the result/
+            Defaults to false, which means that missing chromosomes are allowed.
     <low_mem> bool. If True, attempt to reduce memory used by writing pixel chunks
             to an intermediate dataset in the output cool file.
     <command_line> bool. True if executing from run_hic.py. Prompts hic headers
@@ -940,9 +946,9 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, low_mem=Fa
     """
     unit = 'BP'  # only using base pair unit for now
     resolution = int(resolution)
-    req, used_chrs, resolutions, masteridx, genome = read_header(infile)
+    req, header_chrs, resolutions, masteridx, genome = read_header(infile)
     if command_line:  # print hic header info for command line usage
-        chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
+        chr_names = [header_chrs[key][1] for key in header_chrs.keys()]
         print('################')
         print('### hic2cool ###')
         print('################')
@@ -950,8 +956,6 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, low_mem=Fa
         print('Chromosomes: ', chr_names)
         print('Resolutions: ', resolutions)
         print('Genome: ', genome)
-    if exclude_MT:  # remove chr25, which is MT, if this flag is set
-        used_chrs.pop(25, None)
     # ensure user input binsize is a resolution supported by the hic file
     if resolution != 0 and resolution not in resolutions:
         error_str = (
@@ -963,9 +967,17 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_MT=False, low_mem=Fa
     global multi_res
     multi_res = resolution == 0
     for binsize in use_resolutions:
+        used_chrs = copy.deepcopy(header_chrs)
         t_start = time.time()
-        req, pair_footer_info, chr_footer_info = read_footer(
+        req, pair_footer_info, chr_footer_info, found_chrs = read_footer(
             req, masteridx, unit, binsize)
+        if exclude_missing:
+            for chrIdx in reversed(list(range(len(used_chrs)))):
+                if chrIdx not in found_chrs:
+                    print('INFO. Chromosome %s was removed for resolution %s, with chrIdx %s '
+                    'because it was not found in the hic file header and -e '
+                    'was used' % (used_chrs[chrIdx][1], binsize, chrIdx))
+                    used_chrs.pop(chrIdx)
         # initialize cooler file. return per resolution bin offset maps
         chr_offset_map = initialize_cool(outfile, req, used_chrs, genome,
                                         binsize, chr_footer_info, low_mem)

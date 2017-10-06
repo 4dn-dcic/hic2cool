@@ -14,7 +14,7 @@ $ pip install hic2cool
 Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in /test/test.py.
 ```
 from hic2cool import hic2cool_convert
-hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional boolean to exclude MT>, <optional low memory mode>)
+hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional boolean to exclude missing>, <optional low memory mode>)
 ```
 Please note that you need to install cooler (pip install cooler) to run the test package. It is included in requirements.txt.
 
@@ -44,7 +44,7 @@ Arguments:
 
 **-r**, or --resolution, is a integer bp resolution supported by the hic file. *Please note* that only resolutions contained within the original hic file can be used. If 0 is given, will use all resolutions to build a multi-resolution file. Default is 0.
 
-**-e**, or --exclude_MT, ignores the mitochondrial contacts if provided.
+**-e**, or --exclude_missing, ignores chromosomes that are declared in the hic file header but missing from the file contacts. If not used (default), missing contact regions will simply be empty in the resulting cool file.
 
 **-l**, or --low_mem, uses less memory to run but takes longer.
 
