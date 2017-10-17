@@ -14,7 +14,7 @@ $ pip install hic2cool
 Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in /test/test.py.
 ```
 from hic2cool import hic2cool_convert
-hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional boolean to exclude missing>, <optional low memory mode>)
+hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional show warnings>)
 ```
 Please note that you need to install cooler (pip install cooler) to run the test package. It is included in requirements.txt.
 
@@ -23,7 +23,7 @@ Please note that you need to install cooler (pip install cooler) to run the test
 
 If you install hic2cool itself using pip, you can simply type:
 ```
-$ hic2cool <infile> <outfile> -r <resolution> -e
+$ hic2cool <infile> <outfile> -r <resolution>
 ```
 
 Otherwise, first ensure that dependencies are installed (done automatically 'pip installing' hic2cool package).
@@ -33,7 +33,7 @@ pip install -r requirements.txt
 
 Then, from the root directory, run:
 ```
-$ python -m hic2cool <infile> <outfile> -r <resolution> -e
+$ python -m hic2cool <infile> <outfile> -r <resolution>
 ```
 
 Arguments:
@@ -44,27 +44,27 @@ Arguments:
 
 **-r**, or --resolution, is a integer bp resolution supported by the hic file. *Please note* that only resolutions contained within the original hic file can be used. If 0 is given, will use all resolutions to build a multi-resolution file. Default is 0.
 
-**-e**, or --exclude_missing, ignores chromosomes that are declared in the hic file header but missing from the file contacts. If not used (default), missing contact regions will simply be empty in the resulting cool file.
+**-w**, or --warnings, causes warnings to be explicitly printed to the console. These are hidden by default, though there are a few cases in which hic2cool will exit with an error based on the input hic file.
 
-**-l**, or --low_mem, uses less memory to run but takes longer.
+**-v**, or --version, print out hic2cool package version and exit.
 
 Running hic2cool from the command line will cause some helpful information about the hic file to be printed to stdout.
 
 
 
 ## Output file structure
-If you elect to use all resolutions, a multi-res .cool file will be produced. This changes the hdf5 structure of the file from a typical .cool file. Namely, all of the information needed for a complete cooler file is stored in separate hdf5 groups named by the individual resolutions. The hdf5 hierarchy is organized as such:
+If you elect to use all resolutions, a multi-res .multi.cool file will be produced. This changes the hdf5 structure of the file from a typical .cool file. Namely, all of the information needed for a complete cooler file is stored in separate hdf5 groups named by the individual resolutions. The hdf5 hierarchy is organized as such:
 
-File --> '###' (where ### is the resolution in bp).
+File --> 'resolutions' --> '###' (where ### is the resolution in bp).
 For example, see the code below that generates a multi-res file and then accesses the specific resolution of 10000 bp.
 
 ```
 from hic2cool import hic2cool_convert
 import cooler
-### using 0 triggers a mult-res output
+### using 0 triggers a multi-res output
 hic2cool_convert('my_hic.hic', 'my_cool.cool', 0)
 ### will give you the cooler object with resolution = 10000 bp
-my_cooler = cooler.Cooler('my_cool.cool::10000')
+my_cooler = cooler.Cooler('my_cool.cool::resolutions/10000')
 ```
 
 When using only one resolution, the .cool file produced stores all the necessary information at the top level. Thus, organization in the multi-res format is not needed. The code below produces a file with one resolution, 10000 bp, and opens it with a cooler object.
@@ -82,7 +82,14 @@ my_cooler = cooler.Cooler(h5file)
 ## Changelog:
 
 ### 0.4.0
-(Ongoing) many misc. bug fixes, major improvements on runtime and memory usage.
+Large patch, should fix most memory issues and improve runtimes:
+* Changed run parameters. Removed -n and -e; added -v (--version) and -w (--warnings)
+* Improved memory usage
+* Improved runtime (many thanks to Nezar Abdennur)
+* hic2cool now does a 'direct' conversion of files and does not fail on missing chr-chr contacts or missing normalization vectors. Finding these issues will cause warnings to be printed (controlled by -w flag)
+* No longer uses the 'weights' column, which is reserved for cooler
+* No longer takes a normalization type argument. All normalization vectors from the hic file are automatically added to the bins table in the output .cool
+* Many other minor bug fixes/code improvement
 ### 0.3.7
 Fixed issue with bin1_offset not containing final entry (should be length nbins + 1).
 ### 0.3.6

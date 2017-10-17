@@ -33,37 +33,33 @@ def captured_output():
 
 class TestRunHic(unittest.TestCase):
     infile_name = 'test/test_data/test_hic.hic'
-    outfile_name_no_exclude = 'test/test_data/test_cool_wo_e_100000.cool'
     outfile_name = 'test/test_data/test_cool_100000.cool'
     outfile_name2 = 'test/test_data/test_cool_2500000.cool'
-    outfile_name_all = 'test/test_data/test_cool_multi_res.cool'
+    outfile_name_all = 'test/test_data/test_cool_multi_res.multi.cool'
     binsize = 100000
     binsize2 = 2500000
 
 
-    def test_run_without_exclude_missing(self):
+    def test_run_with_warnings(self):
         with captured_output() as (out, err):
-            hic2cool_convert(self.infile_name, self.outfile_name_no_exclude, self.binsize)
+            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, True)
         read_out = out.getvalue().strip()
         self.assertTrue('WARNING' in read_out)
-        self.assertFalse('INFO' in read_out)
 
 
     def test_run_exclude_missing_100000(self):
         with captured_output() as (out, err):
-            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, True)
+            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
         read_out = out.getvalue().strip()
         self.assertFalse('WARNING' in read_out)
-        self.assertTrue('INFO' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_name))
 
 
     def test_run_exclude_missings_2500000(self):
         with captured_output() as (out, err):
-            hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2, True)
+            hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2)
         read_out = out.getvalue().strip()
         self.assertFalse('WARNING' in read_out)
-        self.assertTrue('INFO' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_name2))
 
 
@@ -72,17 +68,16 @@ class TestRunHic(unittest.TestCase):
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
-            hic2cool_convert(self.infile_name, self.outfile_name_all, 0, True)
+            hic2cool_convert(self.infile_name, self.outfile_name_all, 0)
         read_out = out.getvalue().strip()
         self.assertFalse('WARNING' in read_out)
-        self.assertTrue('INFO' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_name_all))
 
 
 class TestWithCooler(unittest.TestCase):
     outfile_name = 'test/test_data/test_cool_100000.cool'
     outfile_name2 = 'test/test_data/test_cool_2500000.cool'
-    outfile_name_all = 'test/test_data/test_cool_multi_res.cool'
+    outfile_name_all = 'test/test_data/test_cool_multi_res.multi.cool'
     binsize = 100000
     binsize2 = 2500000
 
@@ -95,8 +90,8 @@ class TestWithCooler(unittest.TestCase):
         # cooler info has 8 entries
         self.assertEqual(len(cool.info), 10)
         self.assertTrue(__version__ in cool.info['generated-by'])
-        self.assertEqual(cool.info['nchroms'], 24)
-        self.assertEqual(len(cool.chromnames), 24) # 'all' & 'mt' excluded
+        self.assertEqual(cool.info['nchroms'], 25)
+        self.assertEqual(len(cool.chromnames), 25) # 'all' excluded
         self.assertEqual(self.binsize, cool.info['bin-size'])
         matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25100000')
         self.assertEqual(matrix_res.shape, (1,1))
@@ -122,7 +117,7 @@ class TestWithCooler(unittest.TestCase):
         # cooler info has 8 entries
         self.assertEqual(len(cool.info), 10)
         self.assertTrue(__version__ in cool.info['generated-by'])
-        self.assertEqual(len(cool.chromnames), 24)
+        self.assertEqual(len(cool.chromnames), 25)
         self.assertEqual(self.binsize2, cool.info['bin-size'])
         matrix_res = cool.matrix(balance=False).fetch('chr1:0-25000000')
         self.assertEqual(matrix_res.shape, (10,10))
@@ -144,22 +139,22 @@ class TestWithCooler(unittest.TestCase):
         # since this is multi-res, hdf5 structure is different
         # expect the following 9 resultions to be present:
         # [2500000, 1000000, 500000, 250000, 100000, 50000, 25000, 10000, 5000]
-        self.assertEqual(len(h5file.keys()), 9)
+        self.assertEqual(len(h5file['resolutions'].keys()), 9)
         # take a resolution and check the metadata
-        res250kb = h5file['250000']
+        res250kb = h5file['resolutions']['250000']
         cool = cooler.Cooler(res250kb)
         cool_file = cool.filename.encode('utf-8')
         self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
         # cooler info has 8 entries
         self.assertEqual(len(cool.info), 10)
         self.assertTrue(__version__ in cool.info['generated-by'])
-        self.assertEqual(len(cool.chromnames), 24)
+        self.assertEqual(len(cool.chromnames), 25)
         self.assertEqual(250000, cool.info['bin-size'])
         matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25250000')
         self.assertEqual(matrix_res.shape, (1,1))
         self.assertEqual(matrix_res[0][0], 4)
         # make sure the updated cooler multi-res syntax is working
-        cool = cooler.Cooler(self.outfile_name_all + '::100000')
+        cool = cooler.Cooler(self.outfile_name_all + '::resolutions/100000')
         cool_file = cool.filename.encode('utf-8')
         self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
         cool_res = int(cool.info['bin-size'])

@@ -1,5 +1,5 @@
 from __future__ import absolute_import
-from . import hic2cool_convert
+from . import hic2cool_convert, __version__
 import argparse
 
 
@@ -28,15 +28,14 @@ def main():
         type=int,
         default=0)
     parser.add_argument(
-        "-v", "--verbose",
+        "-w", "--warnings",
         help="if used, print out non-critical WARNING messages, which are "
              "hidden by default.",
         action="store_true")
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    # these parameters adapted from theaidenlab/straw
-    # KR is default normalization type and BP is the unit for binsize
-    hic2cool_convert(args.infile, args.outfile, args.resolution, args.verbose, True)
+    hic2cool_convert(args.infile, args.outfile, args.resolution, args.warnings, True)
 
 
 if __name__ == '__main__':
