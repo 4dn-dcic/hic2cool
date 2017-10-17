@@ -849,7 +849,8 @@ def hic2cool_convert(infile, outfile, resolution=0, command_line=False):
             print('Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
     if command_line:
-        print(''.join(['WARNING: the following chr-chr idx intersections could not be found in the hic file.', str(warn_chr_keys)]))
+        if warn_chr_keys:
+            print(''.join(['WARNING: the following chr-chr idx intersections could not be found in the hic file.', str(warn_chr_keys)]))
         print(''.join(['hic2cool is finished! Output written to: ', outfile]))
 
 
