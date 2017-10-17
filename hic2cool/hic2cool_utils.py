@@ -30,6 +30,7 @@ import struct
 import zlib
 import math
 import copy
+import mmap
 from datetime import datetime
 
 import numpy as np
@@ -71,7 +72,7 @@ def readcstr(f):
             buf += b
 
 
-def read_header(infile):
+def read_header(req):
     """
     Takes in a .hic file and returns a dictionary containing information about
     the chromosome. Keys are chromosome index numbers (0 through # of chroms
@@ -80,7 +81,6 @@ def read_header(infile):
     file object.
 
     """
-    req = open(infile, 'rb')
     chrs = {}
     resolutions = []
     magic_string = struct.unpack(b'<3s', req.read(3))[0]
@@ -98,10 +98,13 @@ def read_header(infile):
         genome += c
         c = req.read(1)
     genome = genome.decode('ascii')
+    # metadata extraction
+    metadata = {}
     nattributes = struct.unpack(b'<i', req.read(4))[0]
     for x in range(nattributes):
         key = readcstr(req)
         value = readcstr(req)
+        metadata[key] = value
     nChrs = struct.unpack(b'<i', req.read(4))[0]
     for i in range(0, nChrs):
         name = readcstr(req)
@@ -117,211 +120,140 @@ def read_header(infile):
     for x in range(0, nBpRes):
         res = struct.unpack(b'<i', req.read(4))[0]
         resolutions.append(res)
-    return req, chrs, resolutions, masterindex, genome
+    return chrs, resolutions, masterindex, genome, metadata
 
 
-def read_footer(req, master, unit, resolution):
+def read_footer(f, buf, masterindex):
+    f.seek(masterindex)
+
+    cpair_info = {}
+    nBytes = struct.unpack(b'<i', f.read(4))[0]
+    nEntries = struct.unpack(b'<i', f.read(4))[0]
+    for _ in range(nEntries):
+        key = readcstr(f)
+        fpos = struct.unpack(b'<q', f.read(8))[0]
+        sizeinbytes = struct.unpack(b'<i', f.read(4))[0]
+        cpair_info[key] = fpos
+
+    expected = {}
+    factors = {}
+    # raw
+    nExpectedValues = struct.unpack(b'<i', f.read(4))[0]
+    for _ in range(nExpectedValues):
+        unit = readcstr(f)
+        binsize = struct.unpack(b'<i', f.read(4))[0]
+
+        nValues = struct.unpack(b'<i', f.read(4))[0]
+        expected['RAW', unit, binsize] = np.frombuffer(
+            buf,
+            dtype=np.dtype('<d'),
+            count=nValues,
+            offset=f.tell())
+        f.seek(nValues * 8, 1)
+
+        nNormalizationFactors = struct.unpack(b'<i', f.read(4))[0]
+        factors['RAW', unit, binsize] = np.frombuffer(
+            buf,
+            dtype={'names':['chrom','factor'], 'formats':['<i', '<d']},
+            count=nNormalizationFactors,
+            offset=f.tell())
+        f.seek(nNormalizationFactors * 12, 1)
+    # normalized
+    nExpectedValues = struct.unpack(b'<i', f.read(4))[0]
+    for _ in range(nExpectedValues):
+        normtype = readcstr(f)
+        unit = readcstr(f)
+        binsize = struct.unpack(b'<i', f.read(4))[0]
+
+        nValues = struct.unpack(b'<i', f.read(4))[0]
+        expected[normtype, unit, binsize] = np.frombuffer(
+            buf,
+            dtype='<d',
+            count=nValues,
+            offset=f.tell())
+        f.seek(nValues * 8, 1)
+
+        nNormalizationFactors = struct.unpack(b'<i', f.read(4))[0]
+        factors[normtype, unit, binsize] = np.frombuffer(
+            buf,
+            dtype={'names':['chrom','factor'], 'formats':['<i', '<d']},
+            count=nNormalizationFactors,
+            offset=f.tell())
+        f.seek(nNormalizationFactors * 12, 1)
+
+    norm_info = {}
+    nEntries = struct.unpack(b'<i', f.read(4))[0]
+    for _ in range(nEntries):
+        normtype = readcstr(f)
+        chrIdx = struct.unpack(b'<i', f.read(4))[0]
+        unit = readcstr(f)
+        resolution = struct.unpack(b'<i', f.read(4))[0]
+        filePosition = struct.unpack(b'<q', f.read(8))[0]
+        sizeInBytes = struct.unpack(b'<i', f.read(4))[0]
+        norm_info[normtype, unit, resolution, chrIdx] = {
+            'filepos': filePosition,
+            'size': sizeInBytes
+        }
+
+    return cpair_info, expected, factors, norm_info
+
+
+def read_block(req, block_record):
     """
-    Takes in an open hic file and generates two dictionaries. pair_footer_info
-    contains the file position of info for any given chromosome pair (formatted
-    as a string). Chr_footer_info gives chromosome-level size and position info
-    relative to the file for each normalization type. This way, this function
-    only has to run once. This is code from straw.
-
+    Uses a block_record built by read_blockinfo to find records of
+    chrX/chrY/counts for a given block
     """
-    pair_footer_info = {}
-    chr_footer_info = {}
-    found_chrs = []
-    req.seek(master)
-    nBytes = struct.unpack(b'<i', req.read(4))[0]
-    nEntries = struct.unpack(b'<i', req.read(4))[0]
-    found = False
-    for i in range(nEntries):
-        stri = readcstr(req)
-        fpos = struct.unpack(b'<q', req.read(8))[0]
-        sizeinbytes = struct.unpack(b'<i', req.read(4))[0]
-        pair_footer_info[stri] = fpos
-    nExpectedValues = struct.unpack(b'<i', req.read(4))[0]
-    for i in range(nExpectedValues):
-        str_ = readcstr(req)
-        binSize = struct.unpack(b'<i', req.read(4))[0]
-        nValues = struct.unpack(b'<i', req.read(4))[0]
-        for j in range(nValues):
-            v = struct.unpack(b'<d', req.read(8))[0]
-        nNormalizationFactors = struct.unpack(b'<i', req.read(4))[0]
-        for j in range(nNormalizationFactors):
-            chrIdx = struct.unpack(b'<i', req.read(4))[0]
-            v = struct.unpack(b'<d', req.read(8))[0]
-    nExpectedValues = struct.unpack(b'<i', req.read(4))[0]
-    for i in range(nExpectedValues):
-        str_ = readcstr(req)
-        str_ = readcstr(req)
-        binSize = struct.unpack(b'<i', req.read(4))[0]
-        nValues = struct.unpack(b'<i', req.read(4))[0]
-        for j in range(nValues):
-            v = struct.unpack(b'<d', req.read(8))[0]
-        nNormalizationFactors = struct.unpack(b'<i', req.read(4))[0]
-        for j in range(nNormalizationFactors):
-            chrIdx = struct.unpack(b'<i', req.read(4))[0]
-            v = struct.unpack(b'<d', req.read(8))[0]
-    nEntries = struct.unpack(b'<i', req.read(4))[0]
-    for i in range(nEntries):
-        normtype = readcstr(req)
-        if normtype not in NORMS:
-            NORMS.append(normtype)
-        chrIdx = struct.unpack(b'<i', req.read(4))[0]
-        if chrIdx not in chr_footer_info:
-            chr_footer_info[chrIdx] = {}
-            found_chrs.append(chrIdx)
-        unit1 = readcstr(req)
-        resolution1 = struct.unpack(b'<i', req.read(4))[0]
-        filePosition = struct.unpack(b'<q', req.read(8))[0]
-        sizeInBytes = struct.unpack(b'<i', req.read(4))[0]
-        if (unit1 == unit and resolution1 == resolution):
-            chr_footer_info[chrIdx][normtype] = {
-                'position': filePosition,
-                'size': sizeInBytes
-            }
-
-    return req, pair_footer_info, chr_footer_info, found_chrs
-
-
-# FUN(fin, unit, resolution, blockMap)
-# Return [storeBlockData, myBlockBinCount, myBlockColumnCount]
-def read_matrix_zoom_data(req, myunit, mybinsize, blockMap):
-    unit = readcstr(req)
-    temp = struct.unpack(b'<i', req.read(4))[0]
-    temp2 = struct.unpack(b'<f', req.read(4))[0]
-    temp2 = struct.unpack(b'<f', req.read(4))[0]
-    temp2 = struct.unpack(b'<f', req.read(4))[0]
-    temp2 = struct.unpack(b'<f', req.read(4))[0]
-    binSize = struct.unpack(b'<i', req.read(4))[0]
-    blockBinCount = struct.unpack(b'<i', req.read(4))[0]
-    blockColumnCount = struct.unpack(b'<i', req.read(4))[0]
-    storeBlockData = False
-    # for the initial
-    myBlockBinCount = -1
-    myBlockColumnCount = -1
-    if (myunit == unit and mybinsize == binSize):
-        myBlockBinCount = blockBinCount
-        myBlockColumnCount = blockColumnCount
-        storeBlockData = True
-    nBlocks = struct.unpack(b'<i', req.read(4))[0]
-    for b in range(nBlocks):
-        blockNumber = struct.unpack(b'<i', req.read(4))[0]
-        filePosition = struct.unpack(b'<q', req.read(8))[0]
-        blockSizeInBytes = struct.unpack(b'<i', req.read(4))[0]
-        entry = dict()
-        entry['size'] = blockSizeInBytes
-        entry['position'] = filePosition
-        if (storeBlockData):
-            blockMap[blockNumber] = entry
-    return [storeBlockData, myBlockBinCount, myBlockColumnCount]
-
-
-# FUN(fin, myFilePos, unit, binsize, blockMap)
-# Return [blockBinCount, blockColumnCount]
-def read_matrix(req, myFilePos, unit, binsize, blockMap):
-    req.seek(myFilePos)
-    c1 = struct.unpack(b'<i', req.read(4))[0]
-    c2 = struct.unpack(b'<i', req.read(4))[0]
-    nRes = struct.unpack(b'<i', req.read(4))[0]
-    i = 0
-    found = False
-    blockBinCount = -1
-    blockColumnCount = -1
-    while (i < nRes and (not found)):
-        list1 = read_matrix_zoom_data(req, unit, binsize, blockMap)
-        found = list1[0]
-        if (list1[1] != -1 and list1[2] != -1):
-            blockBinCount = list1[1]
-            blockColumnCount = list1[2]
-        i = i + 1
-    if (not found):
-        print("Error finding block data\n")
-        return -1
-    return [blockBinCount, blockColumnCount]
-
-
-# FUN(regionIndices, blockBinCount, blockColumnCount, intra)
-# Return blocksSet
-def get_block_numbers_for_region_from_bin_position(
-        regionIndices, blockBinCount, blockColumnCount, intra):
-    col1 = int(regionIndices[0] / blockBinCount)
-    col2 = int((regionIndices[1] + 1) / blockBinCount)
-    row1 = int(regionIndices[2] / blockBinCount)
-    row2 = int((regionIndices[3] + 1) / blockBinCount)
-    blocksSet = set()
-    for r in range(row1, row2 + 1):
-        for c in range(col1, col2 + 1):
-            blockNumber = r * blockColumnCount + c
-            blocksSet.add(blockNumber)
-    if intra:
-        for r in range(col1, col2 + 1):
-            for c in range(row1, row2 + 1):
-                blockNumber = r * blockColumnCount + c
-                blocksSet.add(blockNumber)
-    return blocksSet
-
-
-# FUN(fin, blockNumber, blockMap)
-def read_block(req, blockNumber, blockMap):
-    idx = dict()
-    if(blockNumber in blockMap):
-        idx = blockMap[blockNumber]
-    else:
-        idx['size'] = 0
-        idx['position'] = 0
-    if (idx['size'] == 0):
-        return []
-    req.seek(idx['position'])
-    compressedBytes = req.read(idx['size'])
+    if len(block_record) == 3:
+        block_idx = block_record[0]
+        position = block_record[1]
+        size = block_record[2]
+    else: # malformed block
+        return np.zeros(0, dtype=CHUNK_DTYPE)
+    req.seek(position)
+    compressedBytes = req.read(size)
     uncompressedBytes = zlib.decompress(compressedBytes)
     nRecords = struct.unpack(b'<i', uncompressedBytes[0:4])[0]
-    v = []
-    global version
+    block = np.zeros(nRecords, dtype=CHUNK_DTYPE)
+    binX = block['bin1_id']
+    binY = block['bin2_id']
+    counts = block['count']
     if (version < 7):
         for i in range(nRecords):
             binX = struct.unpack(b'<i', uncompressedBytes[(12*i):(12*i+4)])[0]
             binY = struct.unpack(b'<i', uncompressedBytes[(12*i+4):(12*i+8)])[0]
-            counts = struct.unpack(b'<f', uncompressedBytes[(12*i+8):(12*i+12)])[0]
-            record = dict()
-            record['binX'] = binX
-            record['binY'] = binY
-            record['counts'] = counts
-            v.append(record)
+            c = struct.unpack(b'<f', uncompressedBytes[(12*i+8):(12*i+12)])[0]
+            binX[i] = x
+            binY[i] = y
+            counts[i] = counts
     else:
         binXOffset = struct.unpack(b'<i', uncompressedBytes[4:8])[0]
         binYOffset = struct.unpack(b'<i', uncompressedBytes[8:12])[0]
         useShort = struct.unpack(b'<b', uncompressedBytes[12:13])[0]
         type_ = struct.unpack(b'<b', uncompressedBytes[13:14])[0]
-        index = 0
+        k = 0
         if (type_ == 1):
             rowCount = struct.unpack(b'<h', uncompressedBytes[14:16])[0]
             temp = 16
             for i in range(rowCount):
                 y = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                 temp = temp+2
-                binY = y + binYOffset
+                y += binYOffset
                 colCount = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                 temp = temp+2
                 for j in range(colCount):
                     x = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                     temp = temp+2
-                    binX = binXOffset + x
+                    x += binXOffset
                     if (useShort==0):
                         c = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                         temp = temp+2
-                        counts = c
                     else:
-                        counts = struct.unpack(b'<f', uncompressedBytes[temp:(temp+4)])[0]
+                        c = struct.unpack(b'<f', uncompressedBytes[temp:(temp+4)])[0]
                         temp = temp+4
-                    record = dict()
-                    record['binX'] = binX
-                    record['binY'] = binY
-                    record['counts'] = counts
-                    v.append(record)
-                    index = index + 1
+                    binX[k] = x
+                    binY[k] = y
+                    counts[k] = c
+                    k += 1
         elif (type_== 2):
             temp = 14
             nPts = struct.unpack(b'<i', uncompressedBytes[temp:(temp+4)])[0]
@@ -331,45 +263,37 @@ def read_block(req, blockNumber, blockMap):
             for i in range(nPts):
                 row = int(i / w)
                 col = i - row * w
-                bin1 = int(binXOffset + col)
-                bin2 = int(binYOffset + row)
+                x = int(binXOffset + col)
+                y = int(binYOffset + row)
                 if (useShort == 0):
                     c = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                     temp = temp+2
                     if (c != -32768):
-                        record = dict()
-                        record['binX'] = bin1
-                        record['binY'] = bin2
-                        record['counts'] = c
-                        v.append(record)
-                        index = index + 1
+                        binX[k] = x
+                        binY[k] = y
+                        counts[k] = c
+                        k += 1
                 else:
-                    counts = struct.unpack(b'<f',uncompressedBytes[temp:(temp+4)])[0]
+                    c = struct.unpack(b'<f',uncompressedBytes[temp:(temp+4)])[0]
                     temp=temp+4
-                    if (counts != 0x7fc00000):
-                        record = dict()
-                        record['binX'] = bin1
-                        record['binY'] = bin2
-                        record['counts'] = counts
-                        v.append(record)
-                        index = index + 1
-    return v
+                    if (c != 0x7fc00000):
+                        binX[k] = x
+                        binY[k] = y
+                        counts[k] = c
+                        k += 1
+    del uncompressedBytes
+    return block
 
 
-# FUN(fin, entry)
-# Return Norm
-def read_normalization_vector(req, entry):
-    req.seek(entry['position'])
-    nValues = struct.unpack(b'<i', req.read(4))[0]
-    value = []
-    for i in range(nValues):
-        d = struct.unpack(b'<d', req.read(8))[0]
-        value.append(d)
-    return value
+def read_normalization_vector(f, buf, entry):
+    filepos = entry['filepos']
+    f.seek(filepos)
+    nValues = struct.unpack(b'<i', f.read(4))[0]
+    return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
 
 
-def parse_hic(req, outfile, chr1, chr2, unit, binsize, covered_chr_pairs,
-              pair_footer_info, chr_offset_map, low_mem):
+def parse_hic(req, buf, outfile, chr_key, unit, binsize,
+              pair_footer_info, chr_offset_map, chr_bins, warn_chr_keys):
     """
     Adapted from the straw() function in the original straw package.
     Mainly, since all chroms are iterated over, the read_header and read_footer
@@ -380,148 +304,80 @@ def parse_hic(req, outfile, chr1, chr2, unit, binsize, covered_chr_pairs,
     As of version 0.3.6, all normalization vectors are automatically returned
     to be written in the output cool file.
     """
-    blockMap = {}
-    # join chunk is used in the non low_mem version. it is an np array
+    # join chunk is an np array
     # that will contain the entire list of c1/c2 counts
-    join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE) if not low_mem else None
-    magic_string = ""
+    join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
     if unit not in ["BP", "FRAG"]:
         print("Unit specified incorrectly, must be one of <BP/FRAG>")
         force_exit(warn_string, req)
-    chr1ind = chr1[0]
-    chr2ind = chr2[0]
-    c1pos1 = 0
-    c1pos2 = int(chr1[2])
-    c2pos1 = 0
-    c2pos2 = int(chr2[2])
-    c1 = min(chr1ind, chr2ind)
-    c2 = max(chr1ind, chr2ind)
-    chr_key = str(c1) + "_" + str(c2)
-    origRegionIndices = []
-    regionIndices = []
-    if (chr1ind > chr2ind):
-        origRegionIndices.append(c2pos1)
-        origRegionIndices.append(c2pos2)
-        origRegionIndices.append(c1pos1)
-        origRegionIndices.append(c1pos2)
-        regionIndices.append(int(c2pos1 / binsize))
-        regionIndices.append(int(c2pos2 / binsize))
-        regionIndices.append(int(c1pos1 / binsize))
-        regionIndices.append(int(c1pos2 / binsize))
-    else:
-        origRegionIndices.append(c1pos1)
-        origRegionIndices.append(c1pos2)
-        origRegionIndices.append(c2pos1)
-        origRegionIndices.append(c2pos2)
-        regionIndices.append(int(c1pos1 / binsize))
-        regionIndices.append(int(c1pos2 / binsize))
-        regionIndices.append(int(c2pos1 / binsize))
-        regionIndices.append(int(c2pos2 / binsize))
+    c1 = int(chr_key.split('_')[0])
+    c2 = int(chr_key.split('_')[0])
     try:
         pair_footer_info[chr_key]
     except KeyError:
-        warn_string = (
-            'WARNING. The intersection between %s and %s could '
-            'not be found in the file.' % (chr1[1], chr2[1]))
-        print(warn_string)
+        warn_chr_keys.append(chr_key)
         return join_chunk
-        # force_exit(warn_string, req)
+    region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
-    list1 = read_matrix(req, myFilePos, unit, binsize, blockMap)
-    blockBinCount = list1[0]
-    blockColumnCount = list1[1]
-    blockNumbers = get_block_numbers_for_region_from_bin_position(
-        regionIndices, blockBinCount, blockColumnCount, c1 == c2)
-    for chunk in generate_counts_chunk(req, c1, c2, blockNumbers, blockMap,
-                                origRegionIndices, chr_offset_map):
-        if low_mem:
-            # write this chunk to a temporary dataset
-            write_chunk(outfile, binsize, chunk)
-        else:
-            join_chunk = build_chunk(join_chunk, chunk)
-    covered_chr_pairs.append(chr_key)
-    return join_chunk
+    # blockRes = read_matrix(req, myFilePos, unit, binsize, blockMap)
+    # blockBinCount = blockRes[0]
+    # blockColumnCount = blockRes[1]
+    # blockNumbers = get_block_numbers_for_region_from_bin_position(
+    #     region_indices, blockBinCount, blockColumnCount, c1 == c2)
+    block_info, block_bins, block_cols = read_blockinfo(req, buf, myFilePos, unit, binsize)
+    return build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices)
 
 
-def generate_counts_chunk(req, c1, c2, blockNumbers, blockMap, origRegionIndices, chr_offset_map):
+def read_blockinfo(f, buf, filepos, unit, binsize):
     """
-    Generator function that assembles chunks of size CHUNK_SIZE, which are
-    2d arrays of size CHUNK_SIZE x 4, in order [bin1, bin2, count, norm values]
+    Read the locations of the data blocks of a cpair
     """
-    counts_chunk = []
-    for i_set in (blockNumbers):
-        records = read_block(req, i_set, blockMap)
-        for j in range(len(records)):
-            rec = records[j]
-            # x and y are bin indices
-            x = rec['binX']
-            y = rec['binY']
-            c = rec['counts']
-            # bins with offsets considered
-            bin1 = chr_offset_map[c1] + x
-            bin2 = chr_offset_map[c2] + y
-            if ((x >= origRegionIndices[0] and x <= origRegionIndices[1] and
-                 y >= origRegionIndices[2] and y <= origRegionIndices[3]) or
-                 ((c1 == c2) and
-                   y >= origRegionIndices[0] and y <= origRegionIndices[1] and
-                   x >= origRegionIndices[2] and x <= origRegionIndices[3])):
-                counts_chunk.append([bin1, bin2, c])
-            if len(counts_chunk) >= CHUNK_SIZE:
-                yield chunk_to_array(counts_chunk)
-                counts_chunk = []
-    yield chunk_to_array(counts_chunk)
+    f.seek(filepos)
+
+    c1 = struct.unpack('<i', f.read(4))[0]
+    c2 = struct.unpack('<i', f.read(4))[0]
+    nRes = struct.unpack('<i', f.read(4))[0]
+    for _ in range(nRes):
+        unit_ = readcstr(f)
+        f.seek(5 * 4, 1)
+        binsize_ = struct.unpack('<i', f.read(4))[0]
+        blockBinCount = struct.unpack('<i', f.read(4))[0]
+        blockColCount = struct.unpack('<i', f.read(4))[0]
+        nBlocks = struct.unpack('<i', f.read(4))[0]
+        if unit == unit_ and binsize == binsize_:
+            break
+        f.seek(nBlocks * 16, 1)
+
+    dt = {'names': ['block_id','filepos','size'], 'formats': ['<i', '<q', '<i']}
+    data = np.frombuffer(buf, dt, count=nBlocks, offset=f.tell())
+    return data, blockBinCount, blockColCount
 
 
-def chunk_to_array(counts_chunk):
+def build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices):
     """
-    Takes the 2d array structure of the chunks and converts to a named
-    2d numpy array with the correct datatypes. This step is important
-    because the structured array is used to sort the datasets in the pixels
-    group in the finalize_resolution_cool function.
+    Takes the given block_info and find those bin_IDs/counts from the hic file,
+    using them to build and return a chunk of counts
     """
-    if len(counts_chunk) == 0:
-        return np.zeros(shape=0, dtype=CHUNK_DTYPE)
-    intermediate = np.array(counts_chunk)
-    named_arr = np.zeros(len(counts_chunk), dtype=CHUNK_DTYPE)
-    for idx, name in enumerate(CHUNK_DTYPE['names']):
-        named_arr[name] = intermediate[:,idx]
-    # the normalization values
-    return named_arr
+    [binX0, binX1, binY0, binY1] = region_indices
+    block_results = []
+    for block_record in block_info:
+        records = read_block(req, block_record)
+        # skip empty records
+        if not records.size:
+            continue
+        mask = ((records['bin1_id'] >= binX0) &
+                (records['bin1_id'] < binX1) &
+                (records['bin2_id'] >= binY0) &
+                (records['bin2_id'] < binY1))
+        records = records[mask]
+        # add chr offsets
+        records['bin1_id'] += chr_offset_map[c1]
+        records['bin2_id'] += chr_offset_map[c2]
+        block_results.append(records)
+    return np.concatenate(block_results, axis=0)
 
 
-def build_chunk(total_chunk, counts_chunk):
-    """
-    The non hdf5-storing method of extending the chunks that will be sorted
-    and written to the pixels table in the prepare_chunks_dataset fxn
-    """
-    this_chunk_size = len(counts_chunk)
-    if this_chunk_size == 0:
-        return total_chunk
-    prev_size = total_chunk.shape[0]
-    total_chunk = np.resize(total_chunk, prev_size + this_chunk_size)
-    total_chunk[prev_size:] = counts_chunk
-    return total_chunk
-
-
-def write_chunk(outfile, resolution, counts_chunk):
-    """
-    Write a counts chunk generated by generate_counts_chunk function
-    to the temporary chunks dataset for the given resolution. This temporary
-    dataset is used to generate the final 'pixels' table down the line.
-    """
-    this_chunk_size = len(counts_chunk)
-    if this_chunk_size == 0:
-        return
-    with h5py.File(outfile, "r+") as h5file:
-        h5resolution = h5file[str(resolution)] if multi_res else h5file
-        dataset = h5resolution['chunks']
-        # dsets indices line up with counts_chunk indices
-        prev_size = dataset.shape[0]
-        dataset.resize(prev_size + this_chunk_size, axis=0)
-        dataset[prev_size:] = counts_chunk
-
-
-def initialize_cool(outfile, req, chr_info, genome, resolution, chr_footer_info, low_mem):
+def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resolution, norm_info, multi_res):
     """
     Use various information to initialize a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
@@ -529,26 +385,26 @@ def initialize_cool(outfile, req, chr_info, genome, resolution, chr_footer_info,
     http://cooler.readthedocs.io/en/latest/datamodel.html
     """
     h5opts = dict(compression='gzip', compression_opts=6)
-    with h5py.File(outfile, "a") as h5file:
-        if str(resolution) in h5file.keys():
-            del h5file[str(resolution)]
+    with h5py.File(outfile, "w") as h5file:
+        # if multi_res, organize resolutions as individual cooler files
+        # as groups under resolutions. so, a res of 5kb would be
+        # ['resolutions/5000']. If single res, put all datasets at top level.
         if multi_res:
-            h5resolution = h5file.create_group(str(resolution))
+            if 'resolutions' in h5file:
+                h5res_grp = h5['resolutions']
+            else:
+                h5res_grp = h5file.create_group('resolutions')
+            h5resolution = h5res_grp.create_group(str(resolution))
         else:
             h5resolution = h5file
-        for key in h5resolution.keys():
-            del h5resolution[key]
         # chroms
         grp = h5resolution.create_group('chroms')
         chr_names = write_chroms(grp, chr_info, h5opts)
         # bins
-        bin_table, chr_offsets, chr_n_bins, by_chr_offset_map = create_bins(chr_info, resolution)
+        bin_table, chr_offsets, by_chr_bins, by_chr_offset_map = create_bins(chr_info, resolution)
         grp = h5resolution.create_group('bins')
-        write_bins(grp, req, chr_names, bin_table, chr_n_bins, chr_footer_info, h5opts)
-        # chunks (a temporary group)
+        write_bins(grp, req, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, h5opts)
         n_bins = len(bin_table)
-        if low_mem:
-            prepare_chunks_dataset(h5resolution, n_bins, h5opts)
         # indexes (just initialize bin1offets)
         grp = h5resolution.create_group('indexes')
         write_chrom_offset(grp, chr_offsets, h5opts)
@@ -556,7 +412,7 @@ def initialize_cool(outfile, req, chr_info, genome, resolution, chr_footer_info,
         grp = h5resolution.create_group('pixels')
         initialize_pixels(grp, n_bins, h5opts)
         # w.r.t. metadata, each resolution is considered a full file
-        info = {}
+        info = copy.deepcopy(metadata) # initialize with metadata from header
         info['nchroms'] = len(chr_names)
         info['nbins'] = n_bins
         info['bin-type'] = 'fixed'
@@ -567,7 +423,7 @@ def initialize_cool(outfile, req, chr_info, genome, resolution, chr_footer_info,
         info['genome-assembly'] = genome
         info['creation-date'] = datetime.now().isoformat()
         h5resolution.attrs.update(info)
-    return by_chr_offset_map
+    return by_chr_offset_map, by_chr_bins
 
 
 def write_chroms(grp, chrs, h5opts):
@@ -606,7 +462,7 @@ def create_bins(chrs, binsize):
     bins_array = []
     offsets = [0]
     by_chr_offsets = {}
-    chr_n_bins = {}
+    by_chr_bins = {}
     for c_idx in chrs:
         chr_name = chrs[c_idx][1]
         if chr_name == 'all':
@@ -624,13 +480,13 @@ def create_bins(chrs, binsize):
         # offsets are the number of bins of all chromosomes prior to this one
         # by_chr_offsets are bin offsets for each chromosome, indexed by chr_idx
         by_chr_offsets[chrs[c_idx][0]] = offsets[-1]
-        chr_n_bins[c_idx] = chr_bin_count
+        by_chr_bins[c_idx] = chr_bin_count
         if len(offsets) < len(chrs):
             offsets.append(int(math.ceil(chr_size/binsize) + offsets[-1]))
-    return np.array(bins_array), np.array(offsets), chr_n_bins, by_chr_offsets
+    return np.array(bins_array), np.array(offsets), by_chr_bins, by_chr_offsets
 
 
-def write_bins(grp, req, chroms, bins, chr_n_bins, chr_footer_info, h5opts):
+def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h5opts):
     """
     Write the bins table, which has columns: chrom, start (in bp), end (in bp),
     and one column for each normalization type, named for the norm type.
@@ -665,17 +521,16 @@ def write_bins(grp, req, chroms, bins, chr_n_bins, chr_footer_info, h5opts):
     # write columns for normalization vectors
     for norm in NORMS:
         norm_data = []
-        for chr_idx in chr_n_bins:
-            chr_bin_end = chr_n_bins[chr_idx]
-            if chr_idx not in chr_footer_info:
+        for chr_idx in by_chr_bins:
+            chr_bin_end = by_chr_bins[chr_idx]
+            if chr_idx not in norm_info:
                 print('WARNING. Normalization vector %s does not exist for chr idx %s.'
-                    '\nThis chromosome may not exist in the hic file. Run'
-                    ' with the "-e" option to exclude missing chromosomes.' % (norm, chr_idx))
-                # add a vector of 0's with length equal to chr_n_bins[chr_idx]
+                    '\nThis chromosome may not exist in the hic file.' % (norm, chr_idx))
+                # add a vector of 0's with length equal to by_chr_bins[chr_idx]
                 norm_data.extend([0]*chr_bin_end)
                 continue
                 # force_exit(error_str, req)
-            norm_vector = read_normalization_vector(req, chr_footer_info[chr_idx][norm])
+            norm_vector = read_normalization_vector(req, buf, norm_info[norm, unit, res, chr_idx])
             # possible issue to look into
             # norm_vector returned by read_normalization_vector has an extra
             # entry at the end (0.0) that is never used and causes the
@@ -703,24 +558,6 @@ def norm_convert(val):
         return 1 / val
     else:
         return np.inf
-
-
-def prepare_chunks_dataset(grp, n_bins, h5opts):
-    """
-    Temporary dataset that is deleted before cooler file is finalized.
-    Stores the chunks that are iteratively generated from the hic file.
-    See generate_counts_chunk function for chunk details.
-    """
-    # max_size = n_bins * (n_bins - 1) // 2 + n_bins
-    max_size = None
-    init_size = 0
-    grp.create_dataset(
-        'chunks',
-        shape=(init_size,),
-        maxshape=(max_size,),
-        chunks=(CHUNK_SIZE,),
-        dtype=CHUNK_DTYPE,
-        **h5opts)
 
 
 def write_chrom_offset(grp, chr_offsets, h5opts):
@@ -773,7 +610,7 @@ def write_bin1_offset(grp, bin1_offsets, h5opts):
         **h5opts)
 
 
-def write_pixels_chunk(outfile, resolution, chunks, low_mem):
+def write_pixels_chunk(outfile, resolution, chunks, multi_res):
     """
     Converts the chunks dumped from the hic file into a 2D pixels array,
     with columns bin1 (int idx), bin2 (int idx), and count (int).
@@ -797,11 +634,8 @@ def write_pixels_chunk(outfile, resolution, chunks, low_mem):
     """
     h5opts = dict(compression='gzip', compression_opts=6)
     with h5py.File(outfile, "r+") as h5file:
-        h5resolution = h5file[str(resolution)] if multi_res else h5file
+        h5resolution = h5file['resolutions'][str(resolution)] if multi_res else h5file
         n_bins = h5resolution.attrs['nbins']
-        # do I have to load this into memory?
-        if low_mem:
-            chunks = h5resolution['chunks'].value
         chunks.sort(order=['bin1_id', 'bin2_id'])
         nnz = chunks.shape[0]
         # write ordered chunk to pixels
@@ -811,22 +645,15 @@ def write_pixels_chunk(outfile, resolution, chunks, low_mem):
             prev_size = dataset.shape[0]
             dataset.resize(prev_size + nnz, axis=0)
             dataset[prev_size:] = chunks[set_name]
-        # reset temporary chunks dataset
-        if 'chunks' in h5resolution.keys():
-            del h5resolution['chunks']
-            prepare_chunks_dataset(h5resolution, n_bins, h5opts)
 
 
-def finalize_resolution_cool(outfile, resolution):
+def finalize_resolution_cool(outfile, resolution, multi_res):
     """
-    Finally, remove the chunks dataset and write bin1_offsets and nnz attr
-    for one resolution in the cool file
+    Finally, write bin1_offsets and nnz attr for one resolution in the cool file
     """
     h5opts = dict(compression='gzip', compression_opts=6)
     with h5py.File(outfile, "r+") as h5file:
-        h5resolution = h5file[str(resolution)] if multi_res else h5file
-        if 'chunks' in h5resolution.keys():
-            del h5resolution['chunks']
+        h5resolution = h5file['resolutions'][str(resolution)] if multi_res else h5file
         nnz = h5resolution['pixels']['count'].shape[0]
         n_bins = h5resolution.attrs['nbins']
         # now we need bin offsets
@@ -927,7 +754,7 @@ def write_zooms_for_higlass(h5res):
         h5res[str(i)] = h5py.SoftLink('/resolutions/{}'.format(res))
 
 
-def hic2cool_convert(infile, outfile, resolution=0, exclude_missing=False, low_mem=False, command_line=False):
+def hic2cool_convert(infile, outfile, resolution=0, command_line=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -937,18 +764,22 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_missing=False, low_m
     <outfile> str .cool output filename
     <resolution> int bp bin size. If 0, use all. Defaults to 0.
                 Final .cool structure will change depending on this param (see README)
-    <exclude_missing> bool. If True, remove missing chromosomes from the result/
-            Defaults to false, which means that missing chromosomes are allowed.
-    <low_mem> bool. If True, attempt to reduce memory used by writing pixel chunks
-            to an intermediate dataset in the output cool file.
     <command_line> bool. True if executing from run_hic.py. Prompts hic headers
                 be printed to stdout.
     """
     unit = 'BP'  # only using base pair unit for now
     resolution = int(resolution)
-    req, header_chrs, resolutions, masteridx, genome = read_header(infile)
+    req = open(infile, 'rb')
+    buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
+    used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
+    pair_footer_info, expected, factors, norm_info = read_footer(req, buf, masteridx)
+    # expected/factors unused for now
+    del expected
+    del factors
+    # used to hold chr_chr key intersections missing from the hic file
+    warn_chr_keys = []
     if command_line:  # print hic header info for command line usage
-        chr_names = [header_chrs[key][1] for key in header_chrs.keys()]
+        chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
         print('################')
         print('### hic2cool ###')
         print('################')
@@ -964,26 +795,31 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_missing=False, low_m
             str(resolutions))
         force_exit(error_str, req)
     use_resolutions = resolutions if resolution == 0 else [resolution]
-    global multi_res
-    multi_res = resolution == 0
+    multi_res = len(use_resolutions) > 1
+    # do some formatting on outfile filename
+    if outfile[-11:] == '.multi.cool':
+        if not multi_res:
+            outfile = ''.join([outfile[:-11] + '.cool'])
+    elif outfile[-6:] == '.mcool':
+        if not multi_res:
+            outfile = ''.join([outfile[:-6] + '.cool'])
+    elif outfile[-5:] == '.cool':
+        if multi_res:
+            outfile = ''.join([outfile[:-5] + '.multi.cool'])
+    else:
+        # unexpected file ending. just append .cool or .multi.cool
+        if multi_res:
+            outfile = ''.join([outfile + '.multi.cool'])
+        else:
+            outfile = ''.join([outfile + '.cool'])
     for binsize in use_resolutions:
-        used_chrs = copy.deepcopy(header_chrs)
         t_start = time.time()
-        req, pair_footer_info, chr_footer_info, found_chrs = read_footer(
-            req, masteridx, unit, binsize)
-        if exclude_missing:
-            for chrIdx in reversed(list(range(len(used_chrs)))):
-                if chrIdx not in found_chrs:
-                    print('INFO. Chromosome %s was removed for resolution %s, with chrIdx %s '
-                    'because it was not found in the hic file header and -e '
-                    'was used' % (used_chrs[chrIdx][1], binsize, chrIdx))
-                    used_chrs.pop(chrIdx)
         # initialize cooler file. return per resolution bin offset maps
-        chr_offset_map = initialize_cool(outfile, req, used_chrs, genome,
-                                        binsize, chr_footer_info, low_mem)
+        chr_offset_map, chr_bins = initialize_res(outfile, req, buf, unit, used_chrs,
+                                         genome, metadata, binsize, norm_info, multi_res)
         covered_chr_pairs = []
         for chr_a in used_chrs:
-            total_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE) if not low_mem else None
+            total_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
             if used_chrs[chr_a][1].lower() == 'all':
                 continue
             for chr_b in used_chrs:
@@ -991,25 +827,43 @@ def hic2cool_convert(infile, outfile, resolution=0, exclude_missing=False, low_m
                     continue
                 c1 = min(chr_a, chr_b)
                 c2 = max(chr_a, chr_b)
-                # ensure this is true
+                chr_key = str(c1) + "_" + str(c2)
                 # since matrices are upper triangular, no need to cover c1-c2
                 # and c2-c1 reciprocally
-                if str(c1) + "_" + str(c2) in covered_chr_pairs:
+                if chr_key in covered_chr_pairs:
                     continue
-                tmp_chunk = parse_hic(req, outfile, used_chrs[c1], used_chrs[c2],
-                          unit, binsize, covered_chr_pairs, pair_footer_info,
-                          chr_offset_map, low_mem)
-                if not low_mem:
-                    total_chunk = build_chunk(total_chunk, tmp_chunk)
-                    del tmp_chunk
+                tmp_chunk = parse_hic(req, buf, outfile, chr_key,
+                          unit, binsize, pair_footer_info,
+                          chr_offset_map, chr_bins, warn_chr_keys)
+                total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
+                del tmp_chunk
+                covered_chr_pairs.append(chr_key)
             # write at the end of every chr_a
-            write_pixels_chunk(outfile, binsize, total_chunk, low_mem)
+            write_pixels_chunk(outfile, binsize, total_chunk, multi_res)
+            del total_chunk
         # finalize to remove chunks and write a bit of metadata
-        finalize_resolution_cool(outfile, binsize)
+        finalize_resolution_cool(outfile, binsize, multi_res)
         t_parse = time.time()
         elapsed_parse = t_parse - t_start
-        print('Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
+        if command_line:
+            print('Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
+    if command_line:
+        print(''.join(['WARNING: the following chr-chr idx intersections could not be found in the hic file.', str(warn_chr_keys)]))
+        print(''.join(['hic2cool is finished! Output written to: ', outfile]))
+
+
+def memory_usage():
+    """
+    Testing utility
+    print(str(memory_usage()))
+    """
+    import psutil
+    import os
+    prc = psutil.Process(os.getpid())
+    # in MB
+    mem = prc.memory_info()[0] / float(2 ** 20)
+    return mem
 
 
 def force_exit(message, req):

@@ -27,20 +27,11 @@ def main():
              "hdf5 structure. See the README for more info",
         type=int,
         default=0)
-    parser.add_argument(
-        "-e", "--exclude_missing",
-        help="if used, allow for missing chromosome contacts",
-        action="store_true")
-    parser.add_argument(
-        "-l", "--low_mem",
-        help="if used, use less RAM at the expense of runtime",
-        action="store_true")
     args = parser.parse_args()
 
     # these parameters adapted from theaidenlab/straw
     # KR is default normalization type and BP is the unit for binsize
-    hic2cool_convert(args.infile, args.outfile, args.resolution,
-                     args.exclude_missing, args.low_mem, True)
+    hic2cool_convert(args.infile, args.outfile, args.resolution, True)
 
 
 if __name__ == '__main__':
