@@ -39,8 +39,6 @@ from ._version import __version__
 
 # Global hic normalization types used
 NORMS = []
-# determine size of counts chunk
-CHUNK_SIZE = 1000
 # Cooler metadata
 MAGIC = "HDF5::Cooler"
 URL = "https://github.com/4dn-dcic/hic2cool"
@@ -162,6 +160,8 @@ def read_footer(f, buf, masterindex):
     nExpectedValues = struct.unpack(b'<i', f.read(4))[0]
     for _ in range(nExpectedValues):
         normtype = readcstr(f)
+        if normtype not in NORMS:
+            NORMS.append(normtype)
         unit = readcstr(f)
         binsize = struct.unpack(b'<i', f.read(4))[0]
 
@@ -196,6 +196,31 @@ def read_footer(f, buf, masterindex):
         }
 
     return cpair_info, expected, factors, norm_info
+
+
+def read_blockinfo(f, buf, filepos, unit, binsize):
+    """
+    Read the locations of the data blocks of a cpair
+    """
+    f.seek(filepos)
+
+    c1 = struct.unpack('<i', f.read(4))[0]
+    c2 = struct.unpack('<i', f.read(4))[0]
+    nRes = struct.unpack('<i', f.read(4))[0]
+    for _ in range(nRes):
+        unit_ = readcstr(f)
+        f.seek(5 * 4, 1)
+        binsize_ = struct.unpack('<i', f.read(4))[0]
+        blockBinCount = struct.unpack('<i', f.read(4))[0]
+        blockColCount = struct.unpack('<i', f.read(4))[0]
+        nBlocks = struct.unpack('<i', f.read(4))[0]
+        if unit == unit_ and binsize == binsize_:
+            break
+        f.seek(nBlocks * 16, 1)
+
+    dt = {'names': ['block_id','filepos','size'], 'formats': ['<i', '<q', '<i']}
+    data = np.frombuffer(buf, dt, count=nBlocks, offset=f.tell())
+    return data, blockBinCount, blockColCount
 
 
 def read_block(req, block_record):
@@ -299,10 +324,9 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize,
     Mainly, since all chroms are iterated over, the read_header and read_footer
     functions were placed outside of straw() and made to be reusable across
     any chromosome pair.
-    As of version 0.4.0, counts and normalization vectors are written to the
-    output cool files in chunks to save memory.
-    As of version 0.3.6, all normalization vectors are automatically returned
-    to be written in the output cool file.
+    As of version 0.4.0, this had a very large re-write based of code
+    generously provided by Nezar. Reads are buffered using mmap and a lot of
+    functions were condensed
     """
     # join chunk is an np array
     # that will contain the entire list of c1/c2 counts
@@ -311,7 +335,7 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize,
         print("Unit specified incorrectly, must be one of <BP/FRAG>")
         force_exit(warn_string, req)
     c1 = int(chr_key.split('_')[0])
-    c2 = int(chr_key.split('_')[0])
+    c2 = int(chr_key.split('_')[1])
     try:
         pair_footer_info[chr_key]
     except KeyError:
@@ -319,38 +343,8 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize,
         return join_chunk
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
-    # blockRes = read_matrix(req, myFilePos, unit, binsize, blockMap)
-    # blockBinCount = blockRes[0]
-    # blockColumnCount = blockRes[1]
-    # blockNumbers = get_block_numbers_for_region_from_bin_position(
-    #     region_indices, blockBinCount, blockColumnCount, c1 == c2)
     block_info, block_bins, block_cols = read_blockinfo(req, buf, myFilePos, unit, binsize)
     return build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices)
-
-
-def read_blockinfo(f, buf, filepos, unit, binsize):
-    """
-    Read the locations of the data blocks of a cpair
-    """
-    f.seek(filepos)
-
-    c1 = struct.unpack('<i', f.read(4))[0]
-    c2 = struct.unpack('<i', f.read(4))[0]
-    nRes = struct.unpack('<i', f.read(4))[0]
-    for _ in range(nRes):
-        unit_ = readcstr(f)
-        f.seek(5 * 4, 1)
-        binsize_ = struct.unpack('<i', f.read(4))[0]
-        blockBinCount = struct.unpack('<i', f.read(4))[0]
-        blockColCount = struct.unpack('<i', f.read(4))[0]
-        nBlocks = struct.unpack('<i', f.read(4))[0]
-        if unit == unit_ and binsize == binsize_:
-            break
-        f.seek(nBlocks * 16, 1)
-
-    dt = {'names': ['block_id','filepos','size'], 'formats': ['<i', '<q', '<i']}
-    data = np.frombuffer(buf, dt, count=nBlocks, offset=f.tell())
-    return data, blockBinCount, blockColCount
 
 
 def build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices):
@@ -523,14 +517,15 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h
         norm_data = []
         for chr_idx in by_chr_bins:
             chr_bin_end = by_chr_bins[chr_idx]
-            if chr_idx not in norm_info:
+            try:
+                norm_key = norm_info[norm, unit, res, chr_idx]
+            except KeyError:
                 print('WARNING. Normalization vector %s does not exist for chr idx %s.'
                     '\nThis chromosome may not exist in the hic file.' % (norm, chr_idx))
                 # add a vector of 0's with length equal to by_chr_bins[chr_idx]
                 norm_data.extend([0]*chr_bin_end)
                 continue
-                # force_exit(error_str, req)
-            norm_vector = read_normalization_vector(req, buf, norm_info[norm, unit, res, chr_idx])
+            norm_vector = read_normalization_vector(req, buf, norm_key)
             # possible issue to look into
             # norm_vector returned by read_normalization_vector has an extra
             # entry at the end (0.0) that is never used and causes the
