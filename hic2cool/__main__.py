@@ -27,11 +27,16 @@ def main():
              "hdf5 structure. See the README for more info",
         type=int,
         default=0)
+    parser.add_argument(
+        "-v", "--verbose",
+        help="if used, print out non-critical WARNING messages, which are "
+             "hidden by default.",
+        action="store_true")
     args = parser.parse_args()
 
     # these parameters adapted from theaidenlab/straw
     # KR is default normalization type and BP is the unit for binsize
-    hic2cool_convert(args.infile, args.outfile, args.resolution, True)
+    hic2cool_convert(args.infile, args.outfile, args.resolution, args.verbose, True)
 
 
 if __name__ == '__main__':

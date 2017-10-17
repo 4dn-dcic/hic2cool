@@ -23,7 +23,6 @@ information.
 
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
-from collections import OrderedDict
 import sys
 import time
 import struct
@@ -31,6 +30,7 @@ import zlib
 import math
 import copy
 import mmap
+import os
 from datetime import datetime
 
 import numpy as np
@@ -39,6 +39,8 @@ from ._version import __version__
 
 # Global hic normalization types used
 NORMS = []
+# are there warnings?
+WARN = False
 # Cooler metadata
 MAGIC = "HDF5::Cooler"
 URL = "https://github.com/4dn-dcic/hic2cool"
@@ -290,10 +292,10 @@ def read_block(req, block_record):
                 col = i - row * w
                 x = int(binXOffset + col)
                 y = int(binYOffset + row)
-                if (useShort == 0):
+                if useShort == 0:
                     c = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
                     temp = temp+2
-                    if (c != -32768):
+                    if c != -32768:
                         binX[k] = x
                         binY[k] = y
                         counts[k] = c
@@ -301,7 +303,7 @@ def read_block(req, block_record):
                 else:
                     c = struct.unpack(b'<f',uncompressedBytes[temp:(temp+4)])[0]
                     temp=temp+4
-                    if (c != 0x7fc00000):
+                    if c != 0x7fc00000 and not math.isnan(c):
                         binX[k] = x
                         binY[k] = y
                         counts[k] = c
@@ -318,7 +320,7 @@ def read_normalization_vector(f, buf, entry):
 
 
 def parse_hic(req, buf, outfile, chr_key, unit, binsize,
-              pair_footer_info, chr_offset_map, chr_bins, warn_chr_keys):
+              pair_footer_info, chr_offset_map, chr_bins, verbose):
     """
     Adapted from the straw() function in the original straw package.
     Mainly, since all chroms are iterated over, the read_header and read_footer
@@ -332,14 +334,16 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize,
     # that will contain the entire list of c1/c2 counts
     join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
     if unit not in ["BP", "FRAG"]:
-        print("Unit specified incorrectly, must be one of <BP/FRAG>")
-        force_exit(warn_string, req)
+        error_string = "Unit specified incorrectly, must be one of <BP/FRAG>"
+        force_exit(error_string, req)
     c1 = int(chr_key.split('_')[0])
     c2 = int(chr_key.split('_')[1])
     try:
         pair_footer_info[chr_key]
     except KeyError:
-        warn_chr_keys.append(chr_key)
+        WARN = True
+        if verbose:
+            print('The intersection between chr %s and chr %s cannot be found in the hic file.' % (c1, c2))
         return join_chunk
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
@@ -371,7 +375,7 @@ def build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices):
     return np.concatenate(block_results, axis=0)
 
 
-def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resolution, norm_info, multi_res):
+def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resolution, norm_info, multi_res, verbose):
     """
     Use various information to initialize a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
@@ -379,13 +383,13 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resoluti
     http://cooler.readthedocs.io/en/latest/datamodel.html
     """
     h5opts = dict(compression='gzip', compression_opts=6)
-    with h5py.File(outfile, "w") as h5file:
+    with h5py.File(outfile, "a") as h5file:
         # if multi_res, organize resolutions as individual cooler files
         # as groups under resolutions. so, a res of 5kb would be
         # ['resolutions/5000']. If single res, put all datasets at top level.
         if multi_res:
             if 'resolutions' in h5file:
-                h5res_grp = h5['resolutions']
+                h5res_grp = h5file['resolutions']
             else:
                 h5res_grp = h5file.create_group('resolutions')
             h5resolution = h5res_grp.create_group(str(resolution))
@@ -397,7 +401,7 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resoluti
         # bins
         bin_table, chr_offsets, by_chr_bins, by_chr_offset_map = create_bins(chr_info, resolution)
         grp = h5resolution.create_group('bins')
-        write_bins(grp, req, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, h5opts)
+        write_bins(grp, req, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, h5opts, verbose)
         n_bins = len(bin_table)
         # indexes (just initialize bin1offets)
         grp = h5resolution.create_group('indexes')
@@ -480,7 +484,7 @@ def create_bins(chrs, binsize):
     return np.array(bins_array), np.array(offsets), by_chr_bins, by_chr_offsets
 
 
-def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h5opts):
+def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h5opts, verbose):
     """
     Write the bins table, which has columns: chrom, start (in bp), end (in bp),
     and one column for each normalization type, named for the norm type.
@@ -520,8 +524,9 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h
             try:
                 norm_key = norm_info[norm, unit, res, chr_idx]
             except KeyError:
-                print('WARNING. Normalization vector %s does not exist for chr idx %s.'
-                    '\nThis chromosome may not exist in the hic file.' % (norm, chr_idx))
+                WARN = True
+                if verbose:
+                    print('WARNING. Normalization vector %s does not exist for chr idx %s.' % (norm, chr_idx))
                 # add a vector of 0's with length equal to by_chr_bins[chr_idx]
                 norm_data.extend([0]*chr_bin_end)
                 continue
@@ -749,7 +754,7 @@ def write_zooms_for_higlass(h5res):
         h5res[str(i)] = h5py.SoftLink('/resolutions/{}'.format(res))
 
 
-def hic2cool_convert(infile, outfile, resolution=0, command_line=False):
+def hic2cool_convert(infile, outfile, resolution=0, verbose=False, command_line=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -759,6 +764,7 @@ def hic2cool_convert(infile, outfile, resolution=0, command_line=False):
     <outfile> str .cool output filename
     <resolution> int bp bin size. If 0, use all. Defaults to 0.
                 Final .cool structure will change depending on this param (see README)
+    <verbose> bool. If True, print out WARNING messages
     <command_line> bool. True if executing from run_hic.py. Prompts hic headers
                 be printed to stdout.
     """
@@ -807,11 +813,18 @@ def hic2cool_convert(infile, outfile, resolution=0, command_line=False):
             outfile = ''.join([outfile + '.multi.cool'])
         else:
             outfile = ''.join([outfile + '.cool'])
+    # check if the desired path exists
+    if os.path.exists(outfile):
+        error_string = ("hic2cool is attempting to write to %s, which is a "
+            "file that already exists. This can cause issues with the hdf5 "
+            "structure. Please remove that file or choose a different output "
+            "name." % (outfile))
+        force_exit(error_string, req)
     for binsize in use_resolutions:
         t_start = time.time()
         # initialize cooler file. return per resolution bin offset maps
         chr_offset_map, chr_bins = initialize_res(outfile, req, buf, unit, used_chrs,
-                                         genome, metadata, binsize, norm_info, multi_res)
+                                        genome, metadata, binsize, norm_info, multi_res, verbose)
         covered_chr_pairs = []
         for chr_a in used_chrs:
             total_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
@@ -829,7 +842,7 @@ def hic2cool_convert(infile, outfile, resolution=0, command_line=False):
                     continue
                 tmp_chunk = parse_hic(req, buf, outfile, chr_key,
                           unit, binsize, pair_footer_info,
-                          chr_offset_map, chr_bins, warn_chr_keys)
+                          chr_offset_map, chr_bins, verbose)
                 total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
                 del tmp_chunk
                 covered_chr_pairs.append(chr_key)
@@ -844,8 +857,8 @@ def hic2cool_convert(infile, outfile, resolution=0, command_line=False):
             print('Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
     if command_line:
-        if warn_chr_keys:
-            print(''.join(['WARNING: the following chr-chr idx intersections could not be found in the hic file.', str(warn_chr_keys)]))
+        if WARN and not verbose:
+            print('Warnings were found in this run. Run in verbose mode (-v) to display them.')
         print(''.join(['hic2cool is finished! Output written to: ', outfile]))
 
 
