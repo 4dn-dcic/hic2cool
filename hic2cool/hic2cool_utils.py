@@ -246,12 +246,12 @@ def read_block(req, block_record):
     counts = block['count']
     if (version < 7):
         for i in range(nRecords):
-            binX = struct.unpack(b'<i', uncompressedBytes[(12*i):(12*i+4)])[0]
-            binY = struct.unpack(b'<i', uncompressedBytes[(12*i+4):(12*i+8)])[0]
+            x = struct.unpack(b'<i', uncompressedBytes[(12*i):(12*i+4)])[0]
+            y = struct.unpack(b'<i', uncompressedBytes[(12*i+4):(12*i+8)])[0]
             c = struct.unpack(b'<f', uncompressedBytes[(12*i+8):(12*i+12)])[0]
             binX[i] = x
             binY[i] = y
-            counts[i] = counts
+            counts[i] = c
     else:
         binXOffset = struct.unpack(b'<i', uncompressedBytes[4:8])[0]
         binYOffset = struct.unpack(b'<i', uncompressedBytes[8:12])[0]
