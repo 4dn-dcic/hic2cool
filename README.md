@@ -81,6 +81,9 @@ my_cooler = cooler.Cooler(h5file)
 
 ## Changelog:
 
+### 0.4.1
+* Fixed error in reading counts from hic files of version 6
+* Chromosome names are now directly taken from hic file (with exception of 'all')
 ### 0.4.0
 Large patch, should fix most memory issues and improve runtimes:
 * Changed run parameters. Removed -n and -e; added -v (--version) and -w (--warnings)
