@@ -110,11 +110,7 @@ def read_header(req):
         name = readcstr(req)
         length = struct.unpack(b'<i', req.read(4))[0]
         if name and length:
-            formatted_name = ('chr' + name if ('all' not in name.lower() and
-                              'chr' not in name.lower()) else name.lower())
-            formatted_name = ('chrM' if formatted_name == 'chrMT'
-                              else formatted_name)
-            chrs[i] = [i, formatted_name, length]
+            chrs[i] = [i, name, length]
     nBpRes = struct.unpack(b'<i', req.read(4))[0]
     # find bp delimited resolutions supported by the hic file
     for x in range(0, nBpRes):
@@ -246,9 +242,9 @@ def read_block(req, block_record):
     counts = block['count']
     if (version < 7):
         for i in range(nRecords):
-            x = struct.unpack(b'<i', uncompressedBytes[(12*i):(12*i+4)])[0]
-            y = struct.unpack(b'<i', uncompressedBytes[(12*i+4):(12*i+8)])[0]
-            c = struct.unpack(b'<f', uncompressedBytes[(12*i+8):(12*i+12)])[0]
+            x = struct.unpack(b'<i', uncompressedBytes[(12*i+4):(12*i+8)])[0]
+            y = struct.unpack(b'<i', uncompressedBytes[(12*i+8):(12*i+12)])[0]
+            c = struct.unpack(b'<f', uncompressedBytes[(12*i+12):(12*i+16)])[0]
             binX[i] = x
             binY[i] = y
             counts[i] = c
@@ -430,10 +426,10 @@ def write_chroms(grp, chrs, h5opts):
     """
     # format chr_names and chr_lengths np arrays
     chr_names = np.array(
-        [val[1] for val in chrs.values() if val[1] != 'all'],
+        [val[1] for val in chrs.values() if val[1].lower() != 'all'],
         dtype=CHROM_DTYPE)
     chr_lengths = np.array(
-        [val[2] for val in chrs.values() if val[1] != 'all'])
+        [val[2] for val in chrs.values() if val[1].lower()  != 'all'])
     grp.create_dataset(
         'name',
         shape=(len(chr_names),),
@@ -463,7 +459,7 @@ def create_bins(chrs, binsize):
     by_chr_bins = {}
     for c_idx in chrs:
         chr_name = chrs[c_idx][1]
-        if chr_name == 'all':
+        if chr_name.lower()  == 'all':
             continue
         chr_size = chrs[c_idx][2]
         bin_start = 0
