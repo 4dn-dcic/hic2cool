@@ -133,7 +133,8 @@ def read_footer(f, buf, masterindex):
 
     expected = {}
     factors = {}
-    # raw
+    norm_info = {}
+    # raw (norm == 'NONE')
     nExpectedValues = struct.unpack(b'<i', f.read(4))[0]
     for _ in range(nExpectedValues):
         unit = readcstr(f)
@@ -154,8 +155,11 @@ def read_footer(f, buf, masterindex):
             count=nNormalizationFactors,
             offset=f.tell())
         f.seek(nNormalizationFactors * 12, 1)
-    # normalized
-    nExpectedValues = struct.unpack(b'<i', f.read(4))[0]
+    # normalized (norm != 'NONE')
+    possibleNorms = f.read(4)
+    if not possibleNorms:
+        return cpair_info, expected, factors, norm_info
+    nExpectedValues = struct.unpack(b'<i', possibleNorms)[0]
     for _ in range(nExpectedValues):
         normtype = readcstr(f)
         if normtype not in NORMS:
@@ -179,7 +183,6 @@ def read_footer(f, buf, masterindex):
             offset=f.tell())
         f.seek(nNormalizationFactors * 12, 1)
 
-    norm_info = {}
     nEntries = struct.unpack(b'<i', f.read(4))[0]
     for _ in range(nEntries):
         normtype = readcstr(f)
