@@ -62,9 +62,9 @@ def read_header(infile):
         name = readcstr(req)
         length = struct.unpack('<i',req.read(4))[0]
         if name and length:
-            formatted_name = ('chr' + name if ('all' not in name.lower() and 
+            formatted_name = ('chr' + name if ('all' not in name.lower() and
                               'chr' not in name.lower()) else name)
-            formatted_name = ('chrM' if formatted_name == 'chrMT' else 
+            formatted_name = ('chrM' if formatted_name == 'chrMT' else
                               formatted_name)
             chrs[i] = [i, formatted_name, length]
     nBpRes = struct.unpack('<i',req.read(4))[0]
@@ -106,6 +106,9 @@ def read_footer(req, master, norm, unit, resolution):
         for j in range(nNormalizationFactors):
             chrIdx = struct.unpack('<i',req.read(4))[0]
             v = struct.unpack('<d',req.read(8))[0]
+    possibleNorms = req.read(4)
+    if not possibleNorms:
+        return req, pair_footer_info, chr_footer_info
     nExpectedValues = struct.unpack('<i',req.read(4))[0]
     for i in range(nExpectedValues):
         str_ = readcstr(req)
@@ -143,7 +146,7 @@ def read_normalization_vector(req, entry):
     return value
 
 
-def parse_norm(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs, 
+def parse_norm(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs,
                pair_footer_info, chr_footer_info, chrom_map):
     """
     Adapted from the straw() function in the original straw package.
@@ -179,13 +182,13 @@ def parse_norm(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs,
         warn_string = (
             'ERROR. There is a discrepancy between the chrs declared in the ' +
             'infile header and the actual information it contains.\nThe '
-            'intersection between ' + chr1[1] + ' and ' + chr2[1] + 
+            'intersection between ' + chr1[1] + ' and ' + chr2[1] +
             ' could not be found in the file.')
         force_exit(warn_string, req)
     myFilePos = pair_footer_info[chr_key]
 
-    if (norm != "NONE"):
-        #import ipdb; ipdb.set_trace()
+    # chr_footer_info will be an empty dictionary if norm not in file
+    if norm != "NONE" and chr_footer_info:
         c1Norm = read_normalization_vector(req, chr_footer_info[c1])
         c2Norm = read_normalization_vector(req, chr_footer_info[c2])
         chrom_map[chr1[1]] = c1Norm
@@ -194,7 +197,7 @@ def parse_norm(norm, req, chr1, chr2, unit, binsize, covered_chr_pairs,
     covered_chr_pairs.append(chr_key)
 
 
-def hic2cool_extractnorms(infile, outfile, resolution=0, 
+def hic2cool_extractnorms(infile, outfile, resolution=0,
                           exclude_MT=False, command_line=False):
     """
     Main function that coordinates the reading of header and footer from infile
@@ -217,12 +220,12 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
     resolution = int(resolution)
 
     req, used_chrs, resolutions, masteridx, genome = read_header(infile)
-    
+
     chromosomes = [used_chrs[i][1] for i in range(1, len(used_chrs))]
     lengths = [used_chrs[i][2] for i in range(1, len(used_chrs))]
     chromsizes = pd.Series(index=chromosomes, data=lengths)
-    
-    
+
+
     if command_line: # print hic header info for command line usage
         chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
         print('################')
@@ -232,7 +235,7 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
         print('Chromosomes: ', chr_names)
         print('Resolutions: ', resolutions)
         print('Genome: ', genome)
-    
+
     if exclude_MT: # remove chr25, which is MT, if this flag is set
         used_chrs.pop(25, None)
 
@@ -240,7 +243,7 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
     if resolution != 0 and resolution not in resolutions:
         error_str = (
             'ERROR. Given binsize (in bp) is not a supported resolution in ' +
-            'this file.\nPlease use 0 (all resolutions) or use one of: ' + 
+            'this file.\nPlease use 0 (all resolutions) or use one of: ' +
             resolutions)
         force_exit(error_str, req)
 
@@ -252,7 +255,7 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
         cooler_groups[binsize] = path
     print('MCOOL contents:')
     print(cooler_groups)
- 
+
     for norm in NORMS:
         print('Norm:', norm)
 
@@ -262,7 +265,7 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
             req, pair_footer_info, chr_footer_info = read_footer(
                 req, masteridx, norm, unit, binsize)
 
-            covered_chr_pairs = []        
+            covered_chr_pairs = []
             for chr_x in used_chrs:
                 if used_chrs[chr_x][1].lower() == 'all':
                     continue
@@ -272,22 +275,27 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
                     c1 = min(chr_x, chr_y)
                     c2 = max(chr_x, chr_y)
                     # ensure this is true
-                    # since matrices are upper triangular, no need to cover 
+                    # since matrices are upper triangular, no need to cover
                     # c1-c2 and c2-c1 reciprocally
                     if str(c1) + "_" + str(c2) in covered_chr_pairs:
                         continue
                     parse_norm(
-                        norm, 
-                        req, 
-                        used_chrs[c1], 
-                        used_chrs[c2], 
-                        unit, 
-                        binsize, 
-                        covered_chr_pairs, 
-                        pair_footer_info, 
-                        chr_footer_info, 
+                        norm,
+                        req,
+                        used_chrs[c1],
+                        used_chrs[c2],
+                        unit,
+                        binsize,
+                        covered_chr_pairs,
+                        pair_footer_info,
+                        chr_footer_info,
                         chrom_map
                     )
+
+            # case where normalization info not present
+            if not chrom_map:
+                print('Normalization not present in hic file at resolution %s. Continuing...' % binsize)
+                continue
 
             lengths_in_bins = bins.groupby('chrom').size()
             # hic normalization vector lengths have inconsistent lengths...
@@ -327,11 +335,11 @@ if __name__ == '__main__':
         """
         Execute the program from the command line
         Args are:
-        python hic2cool.py <infile (.hic)> <outfile (.cool)> <resolutions 
-        desired (defaults to all, optionally bp int)> <normalization type 
-        (defaults to 'KR', optionally 'NONE', 'VC', or 'VC_SQRT')> 
+        python hic2cool.py <infile (.hic)> <outfile (.cool)> <resolutions
+        desired (defaults to all, optionally bp int)> <normalization type
+        (defaults to 'KR', optionally 'NONE', 'VC', or 'VC_SQRT')>
         <exclude MT (default False)>
-        
+
         """
         parser = argparse.ArgumentParser()
         parser.add_argument("infile", help=".hic input file")
@@ -342,17 +350,17 @@ if __name__ == '__main__':
                  "If all resolutions are used, a multi-res .cool file will be "
                  "created, which has a different hdf5 structure. See the "
                  "README for more info", type=int, default=0)
-        parser.add_argument("-e", "--exclude_MT", 
-            help="if used, exclude the mitochondria (MT) from the output", 
+        parser.add_argument("-e", "--exclude_MT",
+            help="if used, exclude the mitochondria (MT) from the output",
             action="store_true")
         args = parser.parse_args()
         # these parameters adapted from theaidenlab/straw
         # KR is default normalization type and BP is the unit for binsize
         hic2cool_extractnorms(
-            args.infile, 
-            args.outfile, 
-            args.resolution, 
-            #args.normalization, 
-            args.exclude_MT, 
+            args.infile,
+            args.outfile,
+            args.resolution,
+            #args.normalization,
+            args.exclude_MT,
             True)
     main()
