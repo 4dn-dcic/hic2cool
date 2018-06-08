@@ -158,6 +158,7 @@ def read_footer(f, buf, masterindex):
     # normalized (norm != 'NONE')
     possibleNorms = f.read(4)
     if not possibleNorms:
+        print('WARNING. No normalization vectors found in the hic file.')
         return cpair_info, expected, factors, norm_info
     nExpectedValues = struct.unpack(b'<i', possibleNorms)[0]
     for _ in range(nExpectedValues):

@@ -9,6 +9,13 @@ import cooler
 import pandas as pd
 from collections import OrderedDict
 
+"""
+This script uses the opposite approach of hic2cool. Whereas hic2cool starts
+with a hic files and generates a cool or mcool file from scratch with the hic
+normalization vectors included, this script requires an exisiting cool/mcool
+file and adds the hic normalization vectors to it manually.
+"""
+
 version = 'dummy'
 
 
@@ -335,9 +342,9 @@ if __name__ == '__main__':
         """
         Execute the program from the command line
         Args are:
-        python hic2cool.py <infile (.hic)> <outfile (.cool)> <resolutions
-        desired (defaults to all, optionally bp int)> <normalization type
-        (defaults to 'KR', optionally 'NONE', 'VC', or 'VC_SQRT')>
+        python hic2hic2cool_extractnorms.py <infile (.hic)> <outfile (.cool)>
+        <resolutions desired (defaults to all, optionally bp int)>
+        <normalization type (defaults to 'KR', optionally 'NONE', 'VC', or 'VC_SQRT')>
         <exclude MT (default False)>
 
         """
@@ -346,10 +353,8 @@ if __name__ == '__main__':
         parser.add_argument("outfile", help=".cool output file")
         parser.add_argument("-r", "--resolution",
             help="integer bp resolution desired in cooler file. "
-                 "Setting to 0 (default) will use all resolutions. "
-                 "If all resolutions are used, a multi-res .cool file will be "
-                 "created, which has a different hdf5 structure. See the "
-                 "README for more info", type=int, default=0)
+                 "Setting to 0 (default) will use all resolutions. ",
+                 type=int, default=0)
         parser.add_argument("-e", "--exclude_MT",
             help="if used, exclude the mitochondria (MT) from the output",
             action="store_true")

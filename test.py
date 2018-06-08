@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 # Test code for hic2cool
 # Requires pip installation of cooler to run
-# Must be run from this directory (/hic2cool/test/)
+# Must be run from the root directory
 
 from __future__ import absolute_import, print_function, unicode_literals
 import unittest
-# will only work with pip installed package
-from hic2cool import hic2cool_convert, __version__
 import cooler
 import os
 import h5py
-import sys
 import subprocess
+import sys
+from hic2cool import hic2cool_convert, __version__
 from contextlib import contextmanager
 try:
     from StringIO import StringIO
@@ -32,10 +31,10 @@ def captured_output():
 
 
 class TestRunHic(unittest.TestCase):
-    infile_name = 'test/test_data/test_hic.hic'
-    outfile_name = 'test/test_data/test_cool_100000.cool'
-    outfile_name2 = 'test/test_data/test_cool_2500000.cool'
-    outfile_name_all = 'test/test_data/test_cool_multi_res.multi.cool'
+    infile_name = 'test_data/test_hic.hic'
+    outfile_name = 'test_data/test_cool_100000.cool'
+    outfile_name2 = 'test_data/test_cool_2500000.cool'
+    outfile_name_all = 'test_data/test_cool_multi_res.multi.cool'
     binsize = 100000
     binsize2 = 2500000
 
@@ -75,9 +74,9 @@ class TestRunHic(unittest.TestCase):
 
 
 class TestWithCooler(unittest.TestCase):
-    outfile_name = 'test/test_data/test_cool_100000.cool'
-    outfile_name2 = 'test/test_data/test_cool_2500000.cool'
-    outfile_name_all = 'test/test_data/test_cool_multi_res.multi.cool'
+    outfile_name = 'test_data/test_cool_100000.cool'
+    outfile_name2 = 'test_data/test_cool_2500000.cool'
+    outfile_name_all = 'test_data/test_cool_multi_res.multi.cool'
     binsize = 100000
     binsize2 = 2500000
 

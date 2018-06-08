@@ -8,11 +8,6 @@
 from setuptools import setup
 
 requires = [
-    'h5py>=2.5.0',
-    'numpy>=1.10.1'
-]
-
-tests_require = [
     'cooler>=0.7.2'
 ]
 
@@ -21,6 +16,7 @@ this_version = open("hic2cool/_version.py").readlines()[-1].split()[-1].strip("\
 setup(
     name = "hic2cool",
     version = this_version,
+    packages = ['hic2cool'],
     description = """Converter between .hic files (from juicer) and single-resolution or multi-resolution .cool files (for cooler).  Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as a simple imported package or a stand-alone Python file for command line conversion.""",
     url = "https://github.com/4dn-dcic/hic2cool",
     download_url = "https://github.com/4dn-dcic/hic2cool/tarball/" + this_version,
@@ -28,13 +24,10 @@ setup(
     author_email = "carl.vitzthum@gmail.com",
     license = "MIT",
     keywords = ["bioinformatics", "genomics", "hi-c", "juicer", "cooler", "contact-matrix", "file-format"],
-    packages = ['hic2cool'],
     install_requires = requires,
-    tests_require = ['cooler'],
+    setup_requires=requires,
+    tests_require=requires,
     test_suite = "test",
-    extras_require={
-        'test': tests_require,
-    },
     entry_points={
         'console_scripts': [
              'hic2cool = hic2cool.__main__:main',
