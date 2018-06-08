@@ -32,9 +32,11 @@ def captured_output():
 
 class TestRunHic(unittest.TestCase):
     infile_name = 'test_data/test_hic.hic'
+    infile_no_norms = 'test_data/test_hic_no_norms.hic'
     outfile_name = 'test_data/test_cool_100000.cool'
     outfile_name2 = 'test_data/test_cool_2500000.cool'
     outfile_name_all = 'test_data/test_cool_multi_res.multi.cool'
+    outfile_no_norms = 'test_data/test_cool_no_norms.multi.cool'
     binsize = 100000
     binsize2 = 2500000
 
@@ -62,6 +64,18 @@ class TestRunHic(unittest.TestCase):
         self.assertTrue(os.path.isfile(self.outfile_name2))
 
 
+
+    def test_run_exclude_missing_multi_res_no_norms(self):
+        # run hic2cool for all resolutions in the hic file
+        with captured_output() as (out, err):
+            # this should fail, because test file is missing chrMT
+            # and excludeMT was not specified
+            hic2cool_convert(self.infile_no_norms, self.outfile_no_norms, 0)
+        read_out = out.getvalue().strip()
+        self.assertTrue('WARNING. No normalization vectors' in read_out)
+        self.assertTrue(os.path.isfile(self.outfile_no_norms))
+
+
     def test_run_exclude_missing_multi_res(self):
         # run hic2cool for all resolutions in the hic file
         with captured_output() as (out, err):
@@ -77,6 +91,7 @@ class TestWithCooler(unittest.TestCase):
     outfile_name = 'test_data/test_cool_100000.cool'
     outfile_name2 = 'test_data/test_cool_2500000.cool'
     outfile_name_all = 'test_data/test_cool_multi_res.multi.cool'
+    outfile_no_norms = 'test_data/test_cool_no_norms.multi.cool'
     binsize = 100000
     binsize2 = 2500000
 
@@ -166,6 +181,20 @@ class TestWithCooler(unittest.TestCase):
         bins = h5file['bins']
         for norm in NORMS:
             assert norm in bins.keys()
+
+
+    def test_no_norms(self):
+        """
+        Added support for missing norm vectors in the hic file
+        outfile_no_norms is a multi.cool
+        """
+        NORMS = ["VC", "VC_SQRT", "KR"]
+        h5file = h5py.File(self.outfile_no_norms, 'r')
+        # resolutions are ['1000000', '16000000', '2000000', '4000000', '500000', '8000000']
+        self.assertEqual(len(h5file['resolutions'].keys()), 6)
+        res500kb_bins = h5file['resolutions']['500000']['bins']
+        for norm in NORMS:
+            assert norm not in res500kb_bins.keys()
 
 
 if __name__ == '__main__':

@@ -37,8 +37,6 @@ import numpy as np
 import h5py
 from ._version import __version__
 
-# Global hic normalization types used
-NORMS = []
 # are there warnings?
 WARN = False
 # Cooler metadata
@@ -770,6 +768,9 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, command
     """
     unit = 'BP'  # only using base pair unit for now
     resolution = int(resolution)
+    # Global hic normalization types used
+    global NORMS
+    NORMS = []
     req = open(infile, 'rb')
     buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
     used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
