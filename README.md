@@ -82,7 +82,7 @@ my_cooler = cooler.Cooler(h5file)
 ## Changelog:
 
 ### 0.4.2
-* Fixed issue where hic files could not be converted if they were missing normalization vectors.
+* Fixed issue where hic files could not be converted if they were missing normalization vectors
 ### 0.4.1
 * Fixed error in reading counts from hic files of version 6
 * Chromosome names are now directly taken from hic file (with exception of 'all')
