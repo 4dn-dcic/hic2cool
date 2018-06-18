@@ -11,7 +11,7 @@ The .hic parsing code is based off the straw project by Neva C. Durand and Yue W
 $ pip install hic2cool
 ```
 
-Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in /test/test.py.
+Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in test.py.
 ```
 from hic2cool import hic2cool_convert
 hic2cool_convert(<infile>, <outfile>, <optional resolution>, <optional show warnings>)

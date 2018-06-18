@@ -37,8 +37,6 @@ import numpy as np
 import h5py
 from ._version import __version__
 
-# Global hic normalization types used
-NORMS = []
 # are there warnings?
 WARN = False
 # Cooler metadata
@@ -133,7 +131,8 @@ def read_footer(f, buf, masterindex):
 
     expected = {}
     factors = {}
-    # raw
+    norm_info = {}
+    # raw (norm == 'NONE')
     nExpectedValues = struct.unpack(b'<i', f.read(4))[0]
     for _ in range(nExpectedValues):
         unit = readcstr(f)
@@ -154,8 +153,12 @@ def read_footer(f, buf, masterindex):
             count=nNormalizationFactors,
             offset=f.tell())
         f.seek(nNormalizationFactors * 12, 1)
-    # normalized
-    nExpectedValues = struct.unpack(b'<i', f.read(4))[0]
+    # normalized (norm != 'NONE')
+    possibleNorms = f.read(4)
+    if not possibleNorms:
+        print('WARNING. No normalization vectors found in the hic file.')
+        return cpair_info, expected, factors, norm_info
+    nExpectedValues = struct.unpack(b'<i', possibleNorms)[0]
     for _ in range(nExpectedValues):
         normtype = readcstr(f)
         if normtype not in NORMS:
@@ -179,7 +182,6 @@ def read_footer(f, buf, masterindex):
             offset=f.tell())
         f.seek(nNormalizationFactors * 12, 1)
 
-    norm_info = {}
     nEntries = struct.unpack(b'<i', f.read(4))[0]
     for _ in range(nEntries):
         normtype = readcstr(f)
@@ -766,6 +768,9 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, command
     """
     unit = 'BP'  # only using base pair unit for now
     resolution = int(resolution)
+    # Global hic normalization types used
+    global NORMS
+    NORMS = []
     req = open(infile, 'rb')
     buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
     used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
