@@ -559,12 +559,13 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h
 
 def norm_convert(val):
     """
-    DEPRECATED. hic2cool now just uses hic normalization vectors as-is,
-    without attempting to invert them to match cooler convention.
+    hic2cool now just uses hic normalization vectors as-is,
+    without attempting to invert them to match cooler convention. This function
+    is now only used with `hic2cool update` to revert cooler weights to their
+    original hic values.
 
-    Convert between hic and cool normalization values. To do this, simply
-    invert norm vectors, since hic weights are divisive and cooler weights
-    are multiplicative.
+    Simply invert norm vectors, since hic norms are divisive and cooler
+    weights are multiplicative.
     """
     if val != 0.0:
         return 1 / val
@@ -987,9 +988,7 @@ def update_invert_weight_for_resolution(h5_data, res=None):
     found_weights = [val for val in h5_data if val not in ['chrom', 'start', 'end']]
     for weight in found_weights:
         h5_weight = h5_data[weight][:]
-        print('OLD: %s' % h5_weight[:10])
         h5_data[weight][:] = list(map(norm_convert, h5_weight))
-        print('NEW: %s' % h5_data[weight][:10])
     if res:
         print('... For resolution %s, inverted following weights: %s' % (res, found_weights))
     else:

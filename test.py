@@ -10,7 +10,8 @@ import os
 import h5py
 import subprocess
 import sys
-from hic2cool import hic2cool_convert, __version__
+import numpy as np
+from hic2cool import hic2cool_convert, hic2cool_update, __version__
 from contextlib import contextmanager
 try:
     from StringIO import StringIO
@@ -30,7 +31,7 @@ def captured_output():
         sys.stdout, sys.stderr = old_out, old_err
 
 
-class TestRunHic(unittest.TestCase):
+class TestRunConvert(unittest.TestCase):
     infile_name = 'test_data/test_hic.hic'
     infile_no_norms = 'test_data/test_hic_no_norms.hic'
     outfile_name = 'test_data/test_cool_100000.cool'
@@ -40,13 +41,11 @@ class TestRunHic(unittest.TestCase):
     binsize = 100000
     binsize2 = 2500000
 
-
     def test_run_with_warnings(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, True)
         read_out = out.getvalue().strip()
         self.assertTrue('WARNING' in read_out)
-
 
     def test_run_exclude_missing_100000(self):
         with captured_output() as (out, err):
@@ -55,15 +54,12 @@ class TestRunHic(unittest.TestCase):
         self.assertFalse('WARNING' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_name))
 
-
     def test_run_exclude_missings_2500000(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2)
         read_out = out.getvalue().strip()
         self.assertFalse('WARNING' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_name2))
-
-
 
     def test_run_exclude_missing_multi_res_no_norms(self):
         # run hic2cool for all resolutions in the hic file
@@ -74,7 +70,6 @@ class TestRunHic(unittest.TestCase):
         read_out = out.getvalue().strip()
         self.assertTrue('WARNING. No normalization vectors' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_no_norms))
-
 
     def test_run_exclude_missing_multi_res(self):
         # run hic2cool for all resolutions in the hic file
@@ -94,7 +89,6 @@ class TestWithCooler(unittest.TestCase):
     outfile_no_norms = 'test_data/test_cool_no_norms.multi.cool'
     binsize = 100000
     binsize2 = 2500000
-
 
     def test_cooler_100000(self):
         h5file = h5py.File(self.outfile_name, 'r')
@@ -122,7 +116,6 @@ class TestWithCooler(unittest.TestCase):
         # self.assertEqual(matrix_res.shape, (1,1))
         # self.assertEqual(round(matrix_res[0][0],3), 3.043)
 
-
     def test_cooler_2500000(self):
         h5file = h5py.File(self.outfile_name2, 'a')
         cool = cooler.Cooler(h5file)
@@ -146,7 +139,6 @@ class TestWithCooler(unittest.TestCase):
         matrix_res = cool.matrix(balance=True).fetch('chr1:0-25000000')
         self.assertEqual(matrix_res.shape, (10,10))
         self.assertEqual(round(matrix_res[9][9],3), 0.613)
-
 
     def test_cooler_multi_res(self):
         h5file = h5py.File(self.outfile_name_all, 'r')
@@ -174,14 +166,12 @@ class TestWithCooler(unittest.TestCase):
         cool_res = int(cool.info['bin-size'])
         self.assertEqual(100000, cool_res)
 
-
     def test_check_norms(self):
         NORMS = ["VC", "VC_SQRT", "KR"]
         h5file = h5py.File(self.outfile_name, 'r')
         bins = h5file['bins']
         for norm in NORMS:
-            assert norm in bins.keys()
-
+            self.assertTrue(norm in bins.keys())
 
     def test_no_norms(self):
         """
@@ -194,7 +184,53 @@ class TestWithCooler(unittest.TestCase):
         self.assertEqual(len(h5file['resolutions'].keys()), 6)
         res500kb_bins = h5file['resolutions']['500000']['bins']
         for norm in NORMS:
-            assert norm not in res500kb_bins.keys()
+            self.assertTrue(norm not in res500kb_bins.keys())
+
+
+class TestRunUpdate(unittest.TestCase):
+    infile_name = 'test_data/old_version_single_res.cool'
+    outfile_name = 'test_data/new_version_single_res.cool'
+
+    def norm_convert(self, val):
+        if val != 0.0:
+            return 1 / val
+        else:
+            return np.nan
+
+    def test_run_update(self):
+        """
+        Test to ensure the update functionality works and changes generated
+        by tags. This specific update will re-invert normalization vectors,
+        so ensure that also works.
+        """
+        # first check some stuff on the input file, which is single-res
+        original_kr_f10 = []  # first 10 values in KR normalization
+        final_kr_f10 = []
+        original_creation_date = ''
+        update_date = ''
+        with h5py.File(self.infile_name, 'r') as h5file:
+            self.assertEqual(h5file.attrs.get('generated-by'), 'hic2cool-0.4.2')
+            self.assertEqual(h5file.attrs.get('update-date'), None)
+            original_creation_date = h5file.attrs.get('creation-date')
+            original_kr_f10 = h5file['bins/KR'][:10]
+        hic2cool_update(self.infile_name, self.outfile_name)
+        self.assertTrue(os.path.isfile(self.outfile_name))
+        # ensure that the new file has a new version and update-date
+        expected_version = 'hic2cool-' + __version__
+        with h5py.File(self.outfile_name, 'r') as h5file:
+            self.assertEqual(h5file.attrs.get('generated-by'), expected_version)
+            self.assertEqual(h5file.attrs.get('creation-date'), original_creation_date)
+            self.assertTrue(h5file.attrs.get('update-date') is not None)
+            update_date = h5file.attrs.get('update-date')
+            final_kr_f10 = h5file['bins/KR'][:10]
+        # make sure the norms got updated correctly
+        for comp in zip(original_kr_f10, final_kr_f10):
+            self.assertEqual(comp[0], self.norm_convert(comp[1]))
+        # make sure running it again does nothing (update-date unchanged)
+        hic2cool_update(self.outfile_name)
+        with h5py.File(self.outfile_name, 'r') as h5file:
+            self.assertEqual(h5file.attrs.get('generated-by'), expected_version)
+            self.assertEqual(h5file.attrs.get('update-date'), update_date)
 
 
 if __name__ == '__main__':
