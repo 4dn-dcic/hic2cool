@@ -71,7 +71,7 @@ def read_header(infile):
         if name and length:
             formatted_name = ('chr' + name if ('all' not in name.lower() and
                               'chr' not in name.lower()) else name)
-            formatted_name = ('chrM' if formatted_name == 'chrMT' else
+            formatted_name = ('chrM' if formatted_name.lower() == 'chrmt' else
                               formatted_name)
             chrs[i] = [i, formatted_name, length]
     nBpRes = struct.unpack('<i',req.read(4))[0]
@@ -232,9 +232,8 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
     lengths = [used_chrs[i][2] for i in range(1, len(used_chrs))]
     chromsizes = pd.Series(index=chromosomes, data=lengths)
 
-
+    chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
     if command_line: # print hic header info for command line usage
-        chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
         print('################')
         print('### hic2cool ###')
         print('################')
@@ -243,8 +242,19 @@ def hic2cool_extractnorms(infile, outfile, resolution=0,
         print('Resolutions: ', resolutions)
         print('Genome: ', genome)
 
-    if exclude_MT: # remove chr25, which is MT, if this flag is set
-        used_chrs.pop(25, None)
+    if exclude_MT: # remove mitchondrial chr by name if this flag is set
+        # find index of chr with formatted name == chrM
+        found_idxs = [idx for idx, fv in used_chrs.items() if fv[1].lower() == 'chrm']
+        if len(found_idxs) == 1:
+            used_chrs.pop(found_idxs[0], None)
+        elif len(found_idxs) > 1:
+            error_str = (
+                'ERROR. More than one chromosome with name chrM was found when '
+                ' attempting to exclude MT. Found chromosomes: %s' % chr_names
+            )
+            force_exit(error_str, req)
+        else:
+            if command_line: print('No chrM found for exlcude MT. Found chromosomes: %s' % chr_names)
 
     # ensure user input binsize is a resolution supported by the hic file
     if resolution != 0 and resolution not in resolutions:
