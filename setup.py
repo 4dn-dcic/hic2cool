@@ -7,9 +7,9 @@
 
 from setuptools import setup
 
-requires = [
-    'cooler>=0.7.2'
-]
+with open('requirements.txt') as f:
+    requires = f.read().splitlines()
+requires = [req.strip() for req in requires]
 
 this_version = open("hic2cool/_version.py").readlines()[-1].split()[-1].strip("\"'")
 
@@ -25,10 +25,10 @@ setup(
     license = "MIT",
     keywords = ["bioinformatics", "genomics", "hi-c", "juicer", "cooler", "contact-matrix", "file-format"],
     install_requires = requires,
-    setup_requires=requires,
-    tests_require=requires,
+    setup_requires = requires,
+    tests_require = requires,
     test_suite = "test",
-    entry_points={
+    entry_points = {
         'console_scripts': [
              'hic2cool = hic2cool.__main__:main',
         ]

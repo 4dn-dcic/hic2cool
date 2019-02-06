@@ -92,87 +92,91 @@ class TestWithCooler(unittest.TestCase):
     binsize2 = 2500000
 
     def test_cooler_100000(self):
-        h5file = h5py.File(self.outfile_name, 'r')
-        cool = cooler.Cooler(h5file)
-        cool_file = cool.filename.encode('utf-8')
-        self.assertEqual(self.outfile_name.encode('utf-8'), cool_file)
-        # cooler info has 8 entries
-        self.assertEqual(len(cool.info), 10)
-        self.assertTrue(__version__ in cool.info['generated-by'])
-        self.assertEqual(cool.info['nchroms'], 25)
-        self.assertEqual(len(cool.chromnames), 25) # 'all' excluded
-        self.assertEqual(self.binsize, cool.info['bin-size'])
-        matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25100000')
-        self.assertEqual(matrix_res.shape, (1,1))
-        self.assertEqual(matrix_res[0][0], 2)
-        # expect a ValueError, since we haven't balanced yet
-        # currently this is not converging
-        with self.assertRaises(ValueError):
-            matrix_res = cool.matrix(balance=True).fetch('chr1:25000000-25100000')
-        # subprocess.call(['cooler', 'balance', '-p', '10', self.outfile_name])
-        # # re-open balanced cool
-        # h5file = h5py.File(self.outfile_name, 'r')
-        # cool = cooler.Cooler(h5file)
-        # matrix_res = cool.matrix(balance=True).fetch('chr1:25000000-25250000')
-        # self.assertEqual(matrix_res.shape, (1,1))
-        # self.assertEqual(round(matrix_res[0][0],3), 3.043)
+        with h5py.File(self.outfile_name, 'r') as h5file:
+            cool = cooler.Cooler(h5file)
+            cool_file = cool.filename.encode('utf-8')
+            self.assertEqual(self.outfile_name.encode('utf-8'), cool_file)
+            # cooler info has 8 entries
+            self.assertEqual(len(cool.info), 10)
+            self.assertTrue(__version__ in cool.info['generated-by'])
+            self.assertEqual(cool.info['nchroms'], 25)
+            self.assertEqual(len(cool.chromnames), 25) # 'all' excluded
+            self.assertEqual(self.binsize, cool.info['bin-size'])
+            # check normalization values and balanced/unbalanced counts
+            matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25100000')
+            bin_raw = matrix_res[0][0]
+            self.assertEqual(matrix_res.shape, (1,1))
+            self.assertEqual(bin_raw, 2)  # known count
+            # expect a ValueError -- not balanced and there is no 'weights' column
+            with self.assertRaises(ValueError):
+                matrix_res = cool.matrix(balance=True).fetch('chr1:25000000-25100000')
+            # check a few norms
+            bin_info = cool.bins()[250]  # corresponds to chr1:25000000-25100000
+            for norm in ['KR', 'VC', 'VC_SQRT']:
+                self.assertTrue(norm in bin_info)
+                # bin_norm_val = bin_info[norm][250]  # value for weight in this bin
+                norm_matrix_res = cool.matrix(balance=norm).fetch('chr1:25000000-25100000')
+                self.assertEqual(norm_matrix_res.shape, (1,1))
+
 
     def test_cooler_2500000(self):
-        h5file = h5py.File(self.outfile_name2, 'a')
-        cool = cooler.Cooler(h5file)
-        cool_file = cool.filename.encode('utf-8')
-        self.assertEqual(self.outfile_name2.encode('utf-8'), cool_file)
-        # cooler info has 8 entries
-        self.assertEqual(len(cool.info), 10)
-        self.assertTrue(__version__ in cool.info['generated-by'])
-        self.assertEqual(len(cool.chromnames), 25)
-        self.assertEqual(self.binsize2, cool.info['bin-size'])
-        matrix_res = cool.matrix(balance=False).fetch('chr1:0-25000000')
-        self.assertEqual(matrix_res.shape, (10,10))
-        self.assertEqual(matrix_res[9][9], 40)
-        with self.assertRaises(ValueError):
-            matrix_res = cool.matrix(balance=True).fetch('chr1:0-25000000')
-        subprocess.call(['cooler', 'balance', self.outfile_name2])
-        h5file.close()
-        # re-open balanced cool
-        h5file = h5py.File(self.outfile_name2, 'a')
-        cool = cooler.Cooler(h5file)
-        matrix_res = cool.matrix(balance=True).fetch('chr1:0-25000000')
-        self.assertEqual(matrix_res.shape, (10,10))
-        self.assertEqual(round(matrix_res[9][9],3), 0.613)
+        with h5py.File(self.outfile_name2, 'a') as h5file:
+            cool = cooler.Cooler(h5file)
+            cool_file = cool.filename.encode('utf-8')
+            self.assertEqual(self.outfile_name2.encode('utf-8'), cool_file)
+            # cooler info has 8 entries
+            self.assertEqual(len(cool.info), 10)
+            self.assertTrue(__version__ in cool.info['generated-by'])
+            self.assertEqual(len(cool.chromnames), 25)
+            self.assertEqual(self.binsize2, cool.info['bin-size'])
+            matrix_res = cool.matrix(balance=False).fetch('chr1:0-25000000')
+            self.assertEqual(matrix_res.shape, (10,10))
+            bin_raw = matrix_res[9][9]
+            self.assertEqual(bin_raw, 40)  # known count
+            # expect a ValueError -- not balanced and there is no 'weights' column
+            with self.assertRaises(ValueError):
+                matrix_res = cool.matrix(balance=True).fetch('chr1:0-25000000')
+            # check a few norms
+            bin_info = cool.bins()[0]  # corresponds to chr1:0-25000000
+            for norm in ['KR', 'VC', 'VC_SQRT']:
+                self.assertTrue(norm in bin_info)
+                # bin_norm_val = bin_info[norm][0]  # value for weight in this bin
+                norm_matrix_res = cool.matrix(balance=norm).fetch('chr1:0-25000000')
+                self.assertEqual(norm_matrix_res.shape, (10,10))
+
 
     def test_cooler_multi_res(self):
-        h5file = h5py.File(self.outfile_name_all, 'r')
-        # since this is multi-res, hdf5 structure is different
-        # expect the following 9 resultions to be present:
-        # [2500000, 1000000, 500000, 250000, 100000, 50000, 25000, 10000, 5000]
-        self.assertEqual(len(h5file['resolutions'].keys()), 9)
-        # take a resolution and check the metadata
-        res250kb = h5file['resolutions']['250000']
-        cool = cooler.Cooler(res250kb)
-        cool_file = cool.filename.encode('utf-8')
-        self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
-        # cooler info has 8 entries
-        self.assertEqual(len(cool.info), 10)
-        self.assertTrue(__version__ in cool.info['generated-by'])
-        self.assertEqual(len(cool.chromnames), 25)
-        self.assertEqual(250000, cool.info['bin-size'])
-        matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25250000')
-        self.assertEqual(matrix_res.shape, (1,1))
-        self.assertEqual(matrix_res[0][0], 4)
-        # make sure the updated cooler multi-res syntax is working
-        cool = cooler.Cooler(self.outfile_name_all + '::resolutions/100000')
-        cool_file = cool.filename.encode('utf-8')
-        self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
-        cool_res = int(cool.info['bin-size'])
-        self.assertEqual(100000, cool_res)
+        with h5py.File(self.outfile_name_all, 'r') as h5file:
+            # since this is multi-res, hdf5 structure is different
+            # expect the following 9 resultions to be present:
+            # [2500000, 1000000, 500000, 250000, 100000, 50000, 25000, 10000, 5000]
+            self.assertEqual(len(h5file['resolutions'].keys()), 9)
+            # take a resolution and check the metadata
+            res250kb = h5file['resolutions']['250000']
+            cool = cooler.Cooler(res250kb)
+            cool_file = cool.filename.encode('utf-8')
+            self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
+            # cooler info has 8 entries
+            self.assertEqual(len(cool.info), 10)
+            self.assertTrue(__version__ in cool.info['generated-by'])
+            self.assertEqual(len(cool.chromnames), 25)
+            self.assertEqual(250000, cool.info['bin-size'])
+            matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25250000')
+            self.assertEqual(matrix_res.shape, (1,1))
+            self.assertEqual(matrix_res[0][0], 4)
+            # make sure the updated cooler multi-res syntax is working
+            cool = cooler.Cooler(self.outfile_name_all + '::resolutions/100000')
+            cool_file = cool.filename.encode('utf-8')
+            self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
+            cool_res = int(cool.info['bin-size'])
+            self.assertEqual(100000, cool_res)
 
     def test_check_norms(self):
         NORMS = ["VC", "VC_SQRT", "KR"]
-        h5file = h5py.File(self.outfile_name, 'r')
-        bins = h5file['bins']
-        for norm in NORMS:
-            self.assertTrue(norm in bins.keys())
+        with h5py.File(self.outfile_name, 'r') as h5file:
+            bins = h5file['bins']
+            for norm in NORMS:
+                self.assertTrue(norm in bins.keys())
 
     def test_no_norms(self):
         """
@@ -180,12 +184,12 @@ class TestWithCooler(unittest.TestCase):
         outfile_no_norms is a multi.cool
         """
         NORMS = ["VC", "VC_SQRT", "KR"]
-        h5file = h5py.File(self.outfile_no_norms, 'r')
-        # resolutions are ['1000000', '16000000', '2000000', '4000000', '500000', '8000000']
-        self.assertEqual(len(h5file['resolutions'].keys()), 6)
-        res500kb_bins = h5file['resolutions']['500000']['bins']
-        for norm in NORMS:
-            self.assertTrue(norm not in res500kb_bins.keys())
+        with h5py.File(self.outfile_no_norms, 'r') as h5file:
+            # resolutions are ['1000000', '16000000', '2000000', '4000000', '500000', '8000000']
+            self.assertEqual(len(h5file['resolutions'].keys()), 6)
+            res500kb_bins = h5file['resolutions']['500000']['bins']
+            for norm in NORMS:
+                self.assertTrue(norm not in res500kb_bins.keys())
 
 
 class TestRunUpdate(unittest.TestCase):
