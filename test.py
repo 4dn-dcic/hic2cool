@@ -10,6 +10,7 @@ import os
 import h5py
 import subprocess
 import sys
+import math
 import numpy as np
 from hic2cool import hic2cool_convert, hic2cool_update, __version__
 from contextlib import contextmanager
@@ -204,15 +205,15 @@ class TestRunUpdate(unittest.TestCase):
         so ensure that also works.
         """
         # first check some stuff on the input file, which is single-res
-        original_kr_f10 = []  # first 10 values in KR normalization
-        final_kr_f10 = []
+        original_kr_data = []  # first 10 values in KR normalization
+        final_kr_data = []
         original_creation_date = ''
         update_date = ''
         with h5py.File(self.infile_name, 'r') as h5file:
             self.assertEqual(h5file.attrs.get('generated-by'), 'hic2cool-0.4.2')
             self.assertEqual(h5file.attrs.get('update-date'), None)
             original_creation_date = h5file.attrs.get('creation-date')
-            original_kr_f10 = h5file['bins/KR'][:10]
+            original_kr_data = h5file['bins/KR'][:100]
         hic2cool_update(self.infile_name, self.outfile_name)
         self.assertTrue(os.path.isfile(self.outfile_name))
         # ensure that the new file has a new version and update-date
@@ -222,10 +223,14 @@ class TestRunUpdate(unittest.TestCase):
             self.assertEqual(h5file.attrs.get('creation-date'), original_creation_date)
             self.assertTrue(h5file.attrs.get('update-date') is not None)
             update_date = h5file.attrs.get('update-date')
-            final_kr_f10 = h5file['bins/KR'][:10]
+            final_kr_data = h5file['bins/KR'][:100]
         # make sure the norms got updated correctly
-        for comp in zip(original_kr_f10, final_kr_f10):
-            self.assertEqual(comp[0], self.norm_convert(comp[1]))
+        for comp in zip(original_kr_data, final_kr_data):
+            if math.isnan(comp[0]):  # special case
+                self.assertTrue(math.isnan(comp[1]))
+                self.assertTrue(math.isnan(self.norm_convert(comp[1])))
+            else:
+                self.assertEqual(comp[0], self.norm_convert(comp[1]))
         # make sure running it again does nothing (update-date unchanged)
         hic2cool_update(self.outfile_name)
         with h5py.File(self.outfile_name, 'r') as h5file:
