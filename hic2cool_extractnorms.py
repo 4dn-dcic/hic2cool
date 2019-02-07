@@ -341,7 +341,7 @@ def force_exit(message, req):
     """
     req.close()
     print(message, file=sys.stderr)
-    sys.exit()
+    sys.exit(1)
 
 
 if __name__ == '__main__':

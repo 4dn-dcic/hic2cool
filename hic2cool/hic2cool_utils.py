@@ -90,9 +90,9 @@ def read_header(req):
     magic_string = struct.unpack(b'<3s', req.read(3))[0]
     req.read(1)
     if (magic_string != b"HIC"):
-        print('... This does not appear to be a HiC file; '
-              'magic string is incorrect')
-        sys.exit()
+        error_string = ('... This does not appear to be a HiC file; '
+                       'magic string is incorrect')
+        force_exit(error_string, req)
     global version
     version = struct.unpack(b'<i', req.read(4))[0]
     masterindex = struct.unpack(b'<q', req.read(8))[0]
@@ -1076,4 +1076,4 @@ def force_exit(message, req=None):
     if req:
         req.close()
     print(message, file=sys.stderr)
-    sys.exit()
+    sys.exit(1)
