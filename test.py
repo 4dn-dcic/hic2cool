@@ -114,6 +114,7 @@ class TestWithCooler(unittest.TestCase):
             # check a few norms
             bin_info = cool.bins()[bin_idx]
             for norm in ['KR', 'VC', 'VC_SQRT']:
+                norm = str(norm) # needed for python 2
                 self.assertTrue(norm in bin_info)
                 bin_norm_val = bin_info[norm][bin_idx]  # value for weight in this bin
                 norm_matrix_res = cool.matrix(balance=norm).fetch('chr1:25000000-25100000')
@@ -132,7 +133,6 @@ class TestWithCooler(unittest.TestCase):
         formatted_v = [int(vl) for vl in v.decode().strip().split('\t')]
         # output corresponds to bin1, bin2, count
         self.assertEqual(formatted_v, [bin_idx, bin_idx, bin_raw_val])
-
 
     def test_cooler_2500000(self):
         with h5py.File(self.outfile_name2, 'a') as h5file:
@@ -155,6 +155,7 @@ class TestWithCooler(unittest.TestCase):
             # check a few norms
             bin_info = cool.bins()[bin_idx]
             for norm in ['KR', 'VC', 'VC_SQRT']:
+                norm = str(norm) # needed for python 2
                 self.assertTrue(norm in bin_info)
                 bin_norm_val = bin_info[norm][bin_idx]  # value for weight in this bin
                 norm_matrix_res = cool.matrix(balance=norm).fetch('chr1:0-25000000')
@@ -173,7 +174,6 @@ class TestWithCooler(unittest.TestCase):
         formatted_v = [int(vl) for vl in v.decode().strip().split('\t')]
         # output corresponds to bin1, bin2, count
         self.assertEqual(formatted_v, [bin_idx, bin_idx, bin_raw_val])
-
 
     def test_cooler_multi_res(self):
         with h5py.File(self.outfile_name_all, 'r') as h5file:
