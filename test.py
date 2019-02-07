@@ -104,19 +104,34 @@ class TestWithCooler(unittest.TestCase):
             self.assertEqual(self.binsize, cool.info['bin-size'])
             # check normalization values and balanced/unbalanced counts
             matrix_res = cool.matrix(balance=False).fetch('chr1:25000000-25100000')
-            bin_raw = matrix_res[0][0]
+            bin_idx = 250 # chr1:25000000-25100000 corresponds to bin 0 at this res
+            bin_raw_val = matrix_res[0][0]
             self.assertEqual(matrix_res.shape, (1,1))
-            self.assertEqual(bin_raw, 2)  # known count
+            self.assertEqual(bin_raw_val, 2)
             # expect a ValueError -- not balanced and there is no 'weights' column
             with self.assertRaises(ValueError):
                 matrix_res = cool.matrix(balance=True).fetch('chr1:25000000-25100000')
             # check a few norms
-            bin_info = cool.bins()[250]  # corresponds to chr1:25000000-25100000
+            bin_info = cool.bins()[bin_idx]
             for norm in ['KR', 'VC', 'VC_SQRT']:
                 self.assertTrue(norm in bin_info)
-                # bin_norm_val = bin_info[norm][250]  # value for weight in this bin
+                bin_norm_val = bin_info[norm][bin_idx]  # value for weight in this bin
                 norm_matrix_res = cool.matrix(balance=norm).fetch('chr1:25000000-25100000')
                 self.assertEqual(norm_matrix_res.shape, (1,1))
+                # handle nan
+                if math.isnan(bin_norm_val):
+                    self.assertTrue(math.isnan(norm_matrix_res[0][0]))
+                else:
+                    # balanced value is equal to count * weight * weight
+                    calc_balanced_val = round(bin_raw_val * bin_norm_val * bin_norm_val, 4)
+                    found_balanced_val = round(norm_matrix_res[0][0], 4)
+                    self.assertEqual(calc_balanced_val, found_balanced_val)
+        # lastly check cooler dump raw count
+        v = subprocess.check_output(['cooler', 'dump', self.outfile_name, '-t',
+                                     'pixels', '-r', 'chr1:25000000-25100000'])
+        formatted_v = [int(vl) for vl in v.decode().strip().split('\t')]
+        # output corresponds to bin1, bin2, count
+        self.assertEqual(formatted_v, [bin_idx, bin_idx, bin_raw_val])
 
 
     def test_cooler_2500000(self):
@@ -131,18 +146,33 @@ class TestWithCooler(unittest.TestCase):
             self.assertEqual(self.binsize2, cool.info['bin-size'])
             matrix_res = cool.matrix(balance=False).fetch('chr1:0-25000000')
             self.assertEqual(matrix_res.shape, (10,10))
-            bin_raw = matrix_res[9][9]
-            self.assertEqual(bin_raw, 40)  # known count
+            bin_idx = 9 # chr1:22500000-25000000 corresponds to bin 9 at this res
+            bin_raw_val = matrix_res[9][9]
+            self.assertEqual(bin_raw_val, 40)
             # expect a ValueError -- not balanced and there is no 'weights' column
             with self.assertRaises(ValueError):
                 matrix_res = cool.matrix(balance=True).fetch('chr1:0-25000000')
             # check a few norms
-            bin_info = cool.bins()[0]  # corresponds to chr1:0-25000000
+            bin_info = cool.bins()[bin_idx]
             for norm in ['KR', 'VC', 'VC_SQRT']:
                 self.assertTrue(norm in bin_info)
-                # bin_norm_val = bin_info[norm][0]  # value for weight in this bin
+                bin_norm_val = bin_info[norm][bin_idx]  # value for weight in this bin
                 norm_matrix_res = cool.matrix(balance=norm).fetch('chr1:0-25000000')
                 self.assertEqual(norm_matrix_res.shape, (10,10))
+                # handle nan specially
+                if math.isnan(bin_norm_val):
+                    self.assertTrue(math.isnan(norm_matrix_res[9][9]))
+                else:
+                    # balanced value is equal to count * weight * weight
+                    calc_balanced_val = round(bin_raw_val * bin_norm_val * bin_norm_val, 4)
+                    found_balanced_val = round(norm_matrix_res[9][9], 4)
+                    self.assertEqual(calc_balanced_val, found_balanced_val)
+        # lastly check cooler dump raw count
+        v = subprocess.check_output(['cooler', 'dump', self.outfile_name2, '-t',
+                                     'pixels', '-r', 'chr1:22500000-25000000'])
+        formatted_v = [int(vl) for vl in v.decode().strip().split('\t')]
+        # output corresponds to bin1, bin2, count
+        self.assertEqual(formatted_v, [bin_idx, bin_idx, bin_raw_val])
 
 
     def test_cooler_multi_res(self):
