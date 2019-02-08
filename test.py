@@ -248,7 +248,7 @@ class TestRunUpdate(unittest.TestCase):
             self.assertEqual(h5file.attrs.get('update-date'), None)
             original_creation_date = h5file.attrs.get('creation-date')
             original_kr_data = h5file['bins/KR'][:100]
-        hic2cool_update(self.infile_name, self.outfile_name)
+        hic2cool_update(self.infile_name, self.outfile_name, silent=True)
         self.assertTrue(os.path.isfile(self.outfile_name))
         # ensure that the new file has a new version and update-date
         expected_version = 'hic2cool-' + __version__
@@ -266,7 +266,7 @@ class TestRunUpdate(unittest.TestCase):
             else:
                 self.assertEqual(comp[0], self.norm_convert(comp[1]))
         # make sure running it again does nothing (update-date unchanged)
-        hic2cool_update(self.outfile_name)
+        hic2cool_update(self.outfile_name, silent=True)
         with h5py.File(self.outfile_name, 'r') as h5file:
             self.assertEqual(h5file.attrs.get('generated-by'), expected_version)
             self.assertEqual(h5file.attrs.get('update-date'), update_date)

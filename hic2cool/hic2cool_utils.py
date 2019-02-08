@@ -794,8 +794,6 @@ def update_invert_weight_for_resolution(h5_data, res=None):
         print('... Inverted following weights: %s' % found_weights)
 
 
-
-
 def prepare_hic2cool_update(version_nums):
     """
     Find what must be done when actually running `hic2cool update`
