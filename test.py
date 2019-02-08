@@ -79,31 +79,32 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
     def test_0_run_with_warnings(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, True)
-        read_out = out.getvalue().strip()
-        self.assertTrue('WARNING' in read_out)
+        read_err = err.getvalue().strip()
+        self.assertTrue('WARNING' in read_err)
 
     def test_1_run_exclude_missing_100000(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
-        read_out = out.getvalue().strip()
-        self.assertFalse('WARNING' in read_out)
+        read_err = err.getvalue().strip()
+        self.assertFalse('WARNING' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name))
 
     def test_2_run_exclude_missings_2500000(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2)
-        read_out = out.getvalue().strip()
-        self.assertFalse('WARNING' in read_out)
+        read_err = err.getvalue().strip()
+        self.assertFalse('WARNING' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name2))
 
     def test_3_run_exclude_missing_multi_res_no_norms(self):
         # run hic2cool for all resolutions in the hic file
+        import pdb; pdb.set_trace()
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
             hic2cool_convert(self.infile_no_norms, self.outfile_no_norms, 0)
-        read_out = out.getvalue().strip()
-        self.assertTrue('WARNING. No normalization vectors' in read_out)
+        read_err = err.getvalue().strip()
+        self.assertTrue('WARNING. No normalization vectors' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_no_norms))
 
     def test_4_run_exclude_missing_multi_res(self):
@@ -112,8 +113,8 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
             hic2cool_convert(self.infile_name, self.outfile_name_all, 0)
-        read_out = out.getvalue().strip()
-        self.assertFalse('WARNING' in read_out)
+        read_err = err.getvalue().strip()
+        self.assertFalse('WARNING' in read_err)
         self.assertTrue(os.path.isfile(self.outfile_name_all))
 
     def test_5_no_norms_in_hic(self):
@@ -123,7 +124,7 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
         read_out = out.getvalue().strip()
         self.assertTrue('Normalizations:  []' in read_out)
         # no mt in this hic file to begin with
-        self.assertTrue('No chromosome found when attempting to exlcude MT' in read_out)
+        self.assertTrue('No chromosome found when attempting to exclude MT' in read_out)
 
     def test_6_add_norms_to_outfile_no_norm(self):
         # infile: [2500000, 1000000, 500000, 250000, 100000, 50000, 25000, 10000, 5000]
@@ -144,9 +145,12 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
             self.assertTrue('Skip resolution %s' % not_share_res in read_out)
         self.assertTrue('Excluding chromosome chrMT with index 25' in read_out)
         # ensure that running the function again results the same norms
+        # run without exclude_mt, which is actually missing anyways
         init_md5, bin_lens = self.get_norms_content_md5(copy1_name, shared)
-        hic2cool_extractnorms(self.infile_name, copy1_name,
-                              exclude_mt=True, silent=True)
+        with captured_output() as (out2, err2):
+            hic2cool_extractnorms(self.infile_name, copy1_name, show_warnings=True)
+        read_err = err2.getvalue().strip()
+        self.assertTrue('Normalization vector KR does not exist for chrMT' in read_err)
         fin_md5, _ = self.get_norms_content_md5(copy1_name, shared, bin_lens)
         self.assertEqual(init_md5, fin_md5)
         # ensure that norm values match between different runs of extract-norms

@@ -46,7 +46,7 @@ Then, from the root directory, run:
 $ python -m hic2cool convert <infile> <outfile> -r <resolution>
 ```
 
-**Arguments for hic2cool convert:**
+### Arguments for hic2cool convert
 
 **infile** is a .hic input file.
 
@@ -122,7 +122,7 @@ As of hic2cool 0.5.0, you can easily extract hic normalization vectors to an exi
 hic2cool extract-norms <hic file> <cooler file>
 ```
 
-You may also provide the optional `-e` flag, which will cause the mitchondrial chromosome to automatically be omitted from the extraction. This is found by name; the code specifically looks for one of `['M', 'MT', 'chrM', 'chrMT']` (in a case-insensitive way). You can also provide `-s` and `-w` flags, just like with `hic2cool convert`.
+You may also provide the optional `-e` flag, which will cause the mitchondrial chromosome to automatically be omitted from the extraction. This is found by name; the code specifically looks for one of `['M', 'MT', 'chrM', 'chrMT']` (in a case-insensitive way). Just like with `hic2cool convert`, you can also provide `-s` and `-w` [arguments](#arguments-for-hic2cool-convert).
 
 
 ## Changelog:

@@ -155,7 +155,7 @@ def read_footer(f, buf, masterindex):
     # normalized (norm != 'NONE')
     possibleNorms = f.read(4)
     if not possibleNorms:
-        print('!!! WARNING. No normalization vectors found in the hic file.')
+        print('!!! WARNING. No normalization vectors found in the hic file.', file=sys.stderr)
         return cpair_info, expected, factors, norm_info
     nExpectedValues = struct.unpack(b'<i', possibleNorms)[0]
     for _ in range(nExpectedValues):
@@ -744,7 +744,7 @@ def write_zooms_for_higlass(h5res):
             higlass_compat = False
             break
     if not higlass_compat:
-        print('!!! WARNING: This hic file is not higlass compatible! Will not add [max-zoom] attribute.')
+        print('!!! WARNING: This hic file is not higlass compatible! Will not add [max-zoom] attribute.', file=sys.stderr)
         return
 
     print('... INFO: This hic file is higlass compatible! Adding [max-zoom] attribute.')
@@ -921,7 +921,7 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
                 " file or choose a different output name." % (outfile))
             force_exit(error_string, req)
         if WARN:
-            print('!!! WARNING: removed pre-existing file: %s' % (outfile))
+            print('!!! WARNING: removed pre-existing file: %s' % (outfile), file=sys.stderr)
 
     print('### Converting')
     for binsize in use_resolutions:
@@ -1055,7 +1055,7 @@ def hic2cool_extractnorms(infile, outfile, exclude_mt=False, show_warnings=False
                 except KeyError:
                     WARN = True
                     if show_warnings and not silent:
-                        print('!!! WARNING. Normalization vector %s does not exist for chr %s.'
+                        print('!!! WARNING. Normalization vector %s does not exist for %s.'
                               % (norm, chr_val[1]), file=sys.stderr)
                     # add a vector of 0's with length equal to by_chr_bins[chr_idx]
                     norm_vector = [np.nan] * chr_num_bins
