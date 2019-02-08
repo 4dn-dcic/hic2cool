@@ -48,8 +48,8 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
     infile_no_norms = 'test_data/test_hic_no_norms.hic'
     outfile_name = 'test_data/test_cool_100000.cool'
     outfile_name2 = 'test_data/test_cool_2500000.cool'
-    outfile_name_all = 'test_data/test_cool_multi_res.multi.cool'
-    outfile_no_norms = 'test_data/test_cool_no_norms.multi.cool'
+    outfile_name_all = 'test_data/test_cool_multi_res.mcool'
+    outfile_no_norms = 'test_data/test_cool_no_norms.mcool'
     binsize = 100000
     binsize2 = 2500000
 
@@ -130,7 +130,7 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
         # outfile: [1000000, 16000000, 2000000, 4000000, 500000, 8000000]
         # so, only expected 1000000 and 500000 to be shared
         # copy outfile twice
-        copy1_name = 'test_data/test_cool_no_norms_copy1.multi.cool'
+        copy1_name = 'test_data/test_cool_no_norms_copy1.mcool'
         shutil.copy(self.outfile_no_norms, copy1_name)
         shared = [1000000, 500000]
         not_shared = [2500000, 250000, 100000, 50000, 25000, 10000, 5000]
@@ -164,8 +164,8 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
 class TestWithCooler(unittest.TestCase):
     outfile_name = 'test_data/test_cool_100000.cool'
     outfile_name2 = 'test_data/test_cool_2500000.cool'
-    outfile_name_all = 'test_data/test_cool_multi_res.multi.cool'
-    outfile_no_norms = 'test_data/test_cool_no_norms.multi.cool'
+    outfile_name_all = 'test_data/test_cool_multi_res.mcool'
+    outfile_no_norms = 'test_data/test_cool_no_norms.mcool'
     binsize = 100000
     binsize2 = 2500000
 
@@ -289,7 +289,7 @@ class TestWithCooler(unittest.TestCase):
     def test_no_norms(self):
         """
         Added support for missing norm vectors in the hic file
-        outfile_no_norms is a multi.cool
+        outfile_no_norms is a mcool
         """
         NORMS = ["VC", "VC_SQRT", "KR"]
         with h5py.File(self.outfile_no_norms, 'r') as h5file:
