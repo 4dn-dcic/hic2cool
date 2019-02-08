@@ -10,7 +10,7 @@ The .hic parsing code is based off the [straw project](https://github.com/theaid
 
 ## Important
 
-If you converted a hic file using a version of hic2cool less than 0.5.0, please update your cooler file with the [new update function](#updating-hic2cool-coolers).
+If you converted a hic file using a version of hic2cool lower than 0.5.0, please update your cooler file with the [new update function](#updating-hic2cool-coolers).
 
 ## Using the Python package
 ```
