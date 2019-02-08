@@ -98,7 +98,6 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
 
     def test_3_run_exclude_missing_multi_res_no_norms(self):
         # run hic2cool for all resolutions in the hic file
-        import pdb; pdb.set_trace()
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
             # and excludeMT was not specified
