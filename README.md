@@ -96,6 +96,9 @@ my_cooler = cooler.Cooler(h5file)
 ## higlass
 Multi-resolution coolers produced by hi2cool can be visualized using [higlass](http://higlass.io/). Please note that single resolution coolers are NOT higlass compatible (created when using a non-zero value for `-r`). If you created a cooler before hic2cool version 0.5.0 that you want to view in higlass, it is highly recommended that you upgrade it before viewing on higlass to ensure correct normalization behavior.
 
+To apply the hic normalization transformations in higlass, right click on the matrix and do the following:
+![higlass img](test_data/higlass_apply_transform.png)
+
 
 ## Updating hic2cool coolers
 As of hic2cool version 0.5.0, there was a critical change in how hic normalization vectors are handled in the resulting cooler files. Prior to 0.5.0, hic normalization vectors were inverted by hic2cool. The rationale for doing this is that hic uses divisive normalization values, whereas cooler uses multiplicative values. However, higlass and the 4DN analysis pipelines specifically handled the divisive normalization values, so hic2cool now handles them the same way.
