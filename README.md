@@ -97,7 +97,7 @@ my_cooler = cooler.Cooler(h5file)
 Multi-resolution coolers produced by hi2cool can be visualized using [higlass](http://higlass.io/). Please note that single resolution coolers are NOT higlass compatible (created when using a non-zero value for `-r`). If you created a cooler before hic2cool version 0.5.0 that you want to view in higlass, it is highly recommended that you upgrade it before viewing on higlass to ensure correct normalization behavior.
 
 To apply the hic normalization transformations in higlass, right click on the tileset and do the following:
-<name of tileset> --> Configure Series --> Transforms --> <norm>
+"<name of tileset>" --> "Configure Series" --> "Transforms" --> "<norm>"
 
 ![higlass img](test_data/higlass_apply_transform.png)
 
