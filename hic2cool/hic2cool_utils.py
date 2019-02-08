@@ -12,15 +12,7 @@ Yue Wu (https://github.com/theaidenlab/straw). The cooler file writing was based
 off of much of the CLI code contained in this repo:
 https://github.com/mirnylab/cooler.
 
-The most import method is hic2cool_convert, which can be imported if the package
-is pip installed.
-
-Usage on the command line is: python hic2cool.py infile outfile resolution
-normalization include_MT If an invalid resolution is given (i.e. one that does
-not correspond to a hic resolution, the program will terminate and prompt you to
-enter a valid one) See the README or main() function in this file for more usage
-information.
-
+See README for more information
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import sys
@@ -532,8 +524,8 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h
                 WARN = True
                 if show_warnings:
                     print('!!! WARNING. Normalization vector %s does not exist for chr idx %s.' % (norm, chr_idx))
-                # add a vector of 0's with length equal to by_chr_bins[chr_idx]
-                norm_data.extend([0]*chr_bin_end)
+                # add a vector of nan's for missing vectors
+                norm_data.extend([np.nan]*chr_bin_end)
                 continue
             norm_vector = read_normalization_vector(req, buf, norm_key)
             # NOTE: possible issue to look into
@@ -857,6 +849,7 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
     Opens outfile and writes in form of .cool file
+
     Params:
     <infile> str .hic filename
     <outfile> str .cool output filename
@@ -889,6 +882,7 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
         print('### Header info from hic')
         print('... Chromosomes: ', chr_names)
         print('... Resolutions: ', resolutions)
+        print('... Normalizations: ', NORMS)
         print('... Genome: ', genome)
     # ensure user input binsize is a resolution supported by the hic file
     if resolution != 0 and resolution not in resolutions:
@@ -974,13 +968,16 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
             print('... This file is single resolution and NOT higlass compatible. Run with `-r 0` for multi-resolution.')
 
 
-def hic2cool_extractnorms(infile, outfile, exclude_MT=False, show_warnings=False, silent=False):
+def hic2cool_extractnorms(infile, outfile, exclude_mt=False, show_warnings=False, silent=False):
     """
+    Find all normalization vectors in the given hic file at all resolutions and
+    attempts to add them to the given cooler file. Does not add any metadata
+    to the cooler file. TODO: should we add `extract-norms-date` attr?
 
     Params:
     <infile> str .hic filename
     <outfile> str .cool output filename
-    <exclude_MT> bool. If True, ignore MT contacts. Defaults to False.
+    <exclude_mt> bool. If True, ignore MT contacts. Defaults to False.
     <show_warnings> bool. If True, print out WARNING messages
     <silent> bool. If true, hide standard output
     """
@@ -999,33 +996,31 @@ def hic2cool_extractnorms(infile, outfile, exclude_MT=False, show_warnings=False
     del factors
 
     chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
-    if exclude_MT: # remove mitchondrial chr by name if this flag is set
-        # find index of chr with formatted name == chrM
-        found_idxs = [idx for idx, fv in used_chrs.items() if fv[1].lower() == 'chrm']
-        if len(found_idxs) == 1:
-            used_chrs.pop(found_idxs[0], None)
-            chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
-        if len(found_idxs) > 1:
-            error_str = (
-                'ERROR. More than one chromosome with name chrM was found when '
-                ' attempting to exclude MT. Found chromosomes: %s' % chr_names
-            )
-            force_exit(error_str, req)
-        else:
-            if not silent: print('No chrM found for exlcude MT.')
-
-    # testing
-    used_chrs = {1: used_chrs[1], 2: used_chrs[2]}
-    chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
-
     if not silent: # print hic header info for command line usage
         print('################################')
         print('### hic2cool / extract-norms ###')
         print('################################')
-        print('hic file header info:')
-        print('Chromosomes: ', chr_names)
-        print('Resolutions: ', resolutions)
-        print('Genome: ', genome)
+        print('Header info from hic:')
+        print('... Chromosomes: ', chr_names)
+        print('... Resolutions: ', resolutions)
+        print('... Normalizations: ', NORMS)
+        print('... Genome: ', genome)
+
+    if exclude_mt: # remove mitchondrial chr by name if this flag is set
+        # try to find index of chrM (a.k.a chrMT) if it is present
+        mt_names = ['m', 'mt', 'chrm', 'chrmt']
+        found_idxs = [idx for idx, fv in used_chrs.items() if fv[1].lower() in mt_names]
+        if len(found_idxs) == 1:
+            excl = used_chrs.pop(found_idxs[0], None)
+            if not silent: print('... Excluding chromosome %s with index %s' % (excl[1], excl[0]))
+        if len(found_idxs) > 1:
+            error_str = (
+                'ERROR. More than one chromosome was found when attempting to'
+                ' exclude MT. Found chromosomes: %s' % chr_names
+            )
+            force_exit(error_str, req)
+        else:
+            if not silent: print('... No chromosome found when attempting to exlcude MT.')
 
     # exclude 'all' from chromsomes
     chromosomes = [uc[1] for uc in used_chrs.values() if uc[1].lower() != 'all']
@@ -1042,8 +1037,12 @@ def hic2cool_extractnorms(infile, outfile, exclude_MT=False, show_warnings=False
 
     for norm in NORMS:
         for binsize in resolutions:
+            if binsize not in cooler_groups:
+                if not silent:
+                    print('... Skip resolution %s; it is not in cooler file' % binsize)
+                continue
             if not silent:
-                print('### Extracting %s normalization vector at %s BP' % (norm, binsize))
+                print('... Extracting %s normalization vector at %s BP' % (norm, binsize))
             chrom_map = {}
             bins = cooler.binnify(chromsizes, binsize)
             lengths_in_bins = bins.groupby('chrom').size()
@@ -1053,7 +1052,7 @@ def hic2cool_extractnorms(infile, outfile, exclude_MT=False, show_warnings=False
                     norm_key = norm_info[norm, unit, binsize, chr_val[0]]
                 except KeyError:
                     WARN = True
-                    if show_warnings:
+                    if show_warnings and not silent:
                         print('!!! WARNING. Normalization vector %s does not exist for chr %s.' % (norm, chr_val[1]))
                     # add a vector of 0's with length equal to by_chr_bins[chr_idx]
                     norm_vector = [np.nan] * chr_num_bins
@@ -1085,6 +1084,8 @@ def hic2cool_update(infile, outfile='', show_warnings=False, silent=False):
     """
     Main function that reads the version of a given input cool file produced
     by hic2cool and performs different upgrading operations.
+    Adds 'update-date' metadata to cooler attributes
+
     Params:
     <infile> str .cool input filename
     <outfile> str outpul filename (optional)

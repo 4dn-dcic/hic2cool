@@ -11,8 +11,15 @@ import h5py
 import subprocess
 import sys
 import math
+import hashlib
+import shutil
 import numpy as np
-from hic2cool import hic2cool_convert, hic2cool_update, __version__
+from hic2cool import (
+    hic2cool_convert,
+    hic2cool_update,
+    hic2cool_extractnorms,
+    __version__
+)
 from contextlib import contextmanager
 try:
     from StringIO import StringIO
@@ -32,7 +39,11 @@ def captured_output():
         sys.stdout, sys.stderr = old_out, old_err
 
 
-class TestRunConvert(unittest.TestCase):
+class TestRunConvertAndExtractNorms(unittest.TestCase):
+    """
+    Test methods are named "test_#_ ..." because unittest orders methods
+    by sorted string name
+    """
     infile_name = 'test_data/test_hic.hic'
     infile_no_norms = 'test_data/test_hic_no_norms.hic'
     outfile_name = 'test_data/test_cool_100000.cool'
@@ -42,27 +53,50 @@ class TestRunConvert(unittest.TestCase):
     binsize = 100000
     binsize2 = 2500000
 
-    def test_run_with_warnings(self):
+    def get_norms_content_md5(self, fname, use_resolutions=None, bin_lens={}):
+        """
+        Return hexidecimal digest of md5 from all res in use_resolutions (list)
+        Also return int bin length found in the file
+        """
+        str_val = ''
+        with h5py.File(fname) as h5:
+            if not use_resolutions:
+                use_resolutions = [r for r in h5['resolutions']]
+            for res in use_resolutions:
+                res = str(res)
+                if res not in h5['resolutions']:
+                    continue
+                for norm in ['KR', 'VC', 'VC_SQRT']:
+                    if not bin_lens.get(res):
+                        bin_lens[res] = len(h5['resolutions'][res]['bins'][norm])
+                    str_val += ','.join(repr(item) for item in
+                                        h5['resolutions'][res]['bins'][norm][:bin_lens[res]])
+        str_val = str_val.encode()
+        md5 = hashlib.md5()
+        md5.update(str_val)
+        return md5.hexdigest(), bin_lens
+
+    def test_0_run_with_warnings(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, True)
         read_out = out.getvalue().strip()
         self.assertTrue('WARNING' in read_out)
 
-    def test_run_exclude_missing_100000(self):
+    def test_1_run_exclude_missing_100000(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name, self.binsize)
         read_out = out.getvalue().strip()
         self.assertFalse('WARNING' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_name))
 
-    def test_run_exclude_missings_2500000(self):
+    def test_2_run_exclude_missings_2500000(self):
         with captured_output() as (out, err):
             hic2cool_convert(self.infile_name, self.outfile_name2, self.binsize2)
         read_out = out.getvalue().strip()
         self.assertFalse('WARNING' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_name2))
 
-    def test_run_exclude_missing_multi_res_no_norms(self):
+    def test_3_run_exclude_missing_multi_res_no_norms(self):
         # run hic2cool for all resolutions in the hic file
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
@@ -72,7 +106,7 @@ class TestRunConvert(unittest.TestCase):
         self.assertTrue('WARNING. No normalization vectors' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_no_norms))
 
-    def test_run_exclude_missing_multi_res(self):
+    def test_4_run_exclude_missing_multi_res(self):
         # run hic2cool for all resolutions in the hic file
         with captured_output() as (out, err):
             # this should fail, because test file is missing chrMT
@@ -81,6 +115,50 @@ class TestRunConvert(unittest.TestCase):
         read_out = out.getvalue().strip()
         self.assertFalse('WARNING' in read_out)
         self.assertTrue(os.path.isfile(self.outfile_name_all))
+
+    def test_5_no_norms_in_hic(self):
+        with captured_output() as (out, err):
+            hic2cool_extractnorms(self.infile_no_norms, self.outfile_no_norms,
+                                      exclude_mt=True, show_warnings=True)
+        read_out = out.getvalue().strip()
+        self.assertTrue('Normalizations:  []' in read_out)
+        # no mt in this hic file to begin with
+        self.assertTrue('No chromosome found when attempting to exlcude MT' in read_out)
+
+    def test_6_add_norms_to_outfile_no_norm(self):
+        # infile: [2500000, 1000000, 500000, 250000, 100000, 50000, 25000, 10000, 5000]
+        # outfile: [1000000, 16000000, 2000000, 4000000, 500000, 8000000]
+        # so, only expected 1000000 and 500000 to be shared
+        # copy outfile twice
+        copy1_name = 'test_data/test_cool_no_norms_copy1.multi.cool'
+        shutil.copy(self.outfile_no_norms, copy1_name)
+        shared = [1000000, 500000]
+        not_shared = [2500000, 250000, 100000, 50000, 25000, 10000, 5000]
+        with captured_output() as (out, err):
+            hic2cool_extractnorms(self.infile_name, copy1_name,
+                                  exclude_mt=True, show_warnings=True)
+        read_out = out.getvalue().strip()
+        for share_res in shared:
+            self.assertTrue('normalization vector at %s BP' % share_res in read_out)
+        for not_share_res in not_shared:
+            self.assertTrue('Skip resolution %s' % not_share_res in read_out)
+        self.assertTrue('Excluding chromosome chrMT with index 25' in read_out)
+        # ensure that running the function again results the same norms
+        init_md5, bin_lens = self.get_norms_content_md5(copy1_name, shared)
+        hic2cool_extractnorms(self.infile_name, copy1_name,
+                              exclude_mt=True, silent=True)
+        fin_md5, _ = self.get_norms_content_md5(copy1_name, shared, bin_lens)
+        self.assertEqual(init_md5, fin_md5)
+        # ensure that norm values match between different runs of extract-norms
+        diff_md5, _ = self.get_norms_content_md5(self.outfile_name_all, shared, bin_lens)
+        self.assertEqual(init_md5, diff_md5)
+        # ensure that extracting norms again doesn't change the mult-res cooler
+        # this time use all resolutions
+        init2_md5, bin_lens2 = self.get_norms_content_md5(self.outfile_name_all)
+        hic2cool_extractnorms(self.infile_name, self.outfile_name_all, silent=True)
+        fin2_md5, bin_lens2_2 = self.get_norms_content_md5(self.outfile_name_all)
+        self.assertEqual(init2_md5, fin2_md5)
+        self.assertEqual(bin_lens2, bin_lens2_2)
 
 
 class TestWithCooler(unittest.TestCase):

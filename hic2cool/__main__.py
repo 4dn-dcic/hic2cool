@@ -54,20 +54,20 @@ def main():
     extract_subparser = subparsers.add_parser('extract-norms', help=extract_help, description=extract_help)
     extract_subparser.add_argument("infile", help="hic file path")
     extract_subparser.add_argument("outfile", help="cooler file path")
-    extract_subparser.add_argument("-e", "--exclude-MT",
+    extract_subparser.add_argument("-e", "--exclude-mt",
                                    help="if used, exclude the mitochondria (MT) from the output",
                                    action="store_true")
 
     # arguments shared by all subparsers
     for sp in [convert_subparser, update_subparser, extract_subparser]:
         sp.add_argument(
-            "-w", "--warnings",
-            help="if used, print out non-critical WARNING messages, which are "
-                 "hidden by default",
+            "-s", "--silent", help="if used, silence standard program output",
             action="store_true"
         )
         sp.add_argument(
-            "-s", "--silent", help="if used, silence standard program output",
+            "-w", "--warnings",
+            help="if used, print out non-critical WARNING messages, which are "
+                 "hidden by default. Silent mode takes precedence over this",
             action="store_true"
         )
 
@@ -81,7 +81,7 @@ def main():
     elif args.mode == 'update':
         hic2cool_update(args.infile, args.outfile, args.warnings, args.silent)
     elif args.mode == 'extract-norms':
-        hic2cool_extractnorms(args.infile, args.outfile, args.exclude_MT, args.warnings, args.silent)
+        hic2cool_extractnorms(args.infile, args.outfile, args.exclude_mt, args.warnings, args.silent)
 
 
 if __name__ == '__main__':
