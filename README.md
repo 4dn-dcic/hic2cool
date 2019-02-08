@@ -10,7 +10,7 @@ The .hic parsing code is based off the [straw project](https://github.com/theaid
 
 ## Important
 
-If you converted a hic file using a version of hic2cool less than 0.5.0, please update your cooler file with the [new update function](#markdown-header-updating-hic2cool-coolers).
+If you converted a hic file using a version of hic2cool less than 0.5.0, please update your cooler file with the [new update function](#updating-hic2cool-coolers).
 
 ## Using the Python package
 ```
@@ -22,7 +22,6 @@ Once the package is installed, the main method is hic2cool_convert. It takes the
 from hic2cool import hic2cool_convert
 hic2cool_convert(<infile>, <outfile>, <resolution (optional)>, <warnings (optional)>, <silent (optional)>)
 ```
-Please note that you need to install cooler (pip install cooler) to run the test package. It is included in requirements.txt.
 
 
 ## Converting files using the command line:
@@ -47,7 +46,7 @@ Then, from the root directory, run:
 $ python -m hic2cool convert <infile> <outfile> -r <resolution>
 ```
 
-**Arguments for hic2cool convert:
+**Arguments for hic2cool convert:**
 
 **infile** is a .hic input file.
 
