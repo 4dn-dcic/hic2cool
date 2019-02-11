@@ -155,7 +155,7 @@ def read_footer(f, buf, masterindex):
     # normalized (norm != 'NONE')
     possibleNorms = f.read(4)
     if not possibleNorms:
-        print('!!! WARNING. No normalization vectors found in the hic file.', file=sys.stderr)
+        print_stderr('!!! WARNING. No normalization vectors found in the hic file.')
         return cpair_info, expected, factors, norm_info
     nExpectedValues = struct.unpack(b'<i', possibleNorms)[0]
     for _ in range(nExpectedValues):
@@ -340,8 +340,8 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize,
     except KeyError:
         WARN = True
         if show_warnings:
-            print('... The intersection between chr %s and chr %s cannot be found in the hic file.'
-                  % (c1, c2), file=sys.stderr)
+            print_stderr('... The intersection between chr %s and chr %s cannot be found in the hic file.'
+                  % (c1, c2))
         return join_chunk
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
@@ -524,8 +524,8 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, s
             except KeyError:
                 WARN = True
                 if show_warnings:
-                    print('!!! WARNING. Normalization vector %s does not exist for chr idx %s.'
-                          % (norm, chr_idx), file=sys.stderr)
+                    print_stderr('!!! WARNING. Normalization vector %s does not exist for chr idx %s.'
+                          % (norm, chr_idx))
                 # add a vector of nan's for missing vectors
                 norm_data.extend([np.nan]*chr_bin_end)
                 continue
@@ -744,7 +744,7 @@ def write_zooms_for_higlass(h5res):
             higlass_compat = False
             break
     if not higlass_compat:
-        print('!!! WARNING: This hic file is not higlass compatible! Will not add [max-zoom] attribute.', file=sys.stderr)
+        print_stderr('!!! WARNING: This hic file is not higlass compatible! Will not add [max-zoom] attribute.')
         return
 
     print('... INFO: This hic file is higlass compatible! Adding [max-zoom] attribute.')
@@ -921,7 +921,7 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
                 " file or choose a different output name." % (outfile))
             force_exit(error_string, req)
         if WARN:
-            print('!!! WARNING: removed pre-existing file: %s' % (outfile), file=sys.stderr)
+            print_stderr('!!! WARNING: removed pre-existing file: %s' % (outfile))
 
     print('### Converting')
     for binsize in use_resolutions:
@@ -1055,8 +1055,8 @@ def hic2cool_extractnorms(infile, outfile, exclude_mt=False, show_warnings=False
                 except KeyError:
                     WARN = True
                     if show_warnings and not silent:
-                        print('!!! WARNING. Normalization vector %s does not exist for %s.'
-                              % (norm, chr_val[1]), file=sys.stderr)
+                        print_stderr('!!! WARNING. Normalization vector %s does not exist for %s.'
+                              % (norm, chr_val[1]))
                     # add a vector of 0's with length equal to by_chr_bins[chr_idx]
                     norm_vector = [np.nan] * chr_num_bins
                 else:
@@ -1178,6 +1178,13 @@ def memory_usage():
     return mem
 
 
+def print_stderr(message):
+    """
+    Simply print str message to stderr
+    """
+    print(message, file=sys.stderr)
+
+
 def force_exit(message, req=None):
     """
     Exit the program due to some error. Print out message and close the given
@@ -1185,5 +1192,5 @@ def force_exit(message, req=None):
     """
     if req:
         req.close()
-    print(message, file=sys.stderr)
+    print_stderr(message)
     sys.exit(1)

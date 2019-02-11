@@ -18,6 +18,8 @@ from hic2cool import (
     hic2cool_convert,
     hic2cool_update,
     hic2cool_extractnorms,
+    hic2cool_print_stderr,
+    hic2cool_force_exit,
     __version__
 )
 from contextlib import contextmanager
@@ -351,6 +353,29 @@ class TestRunUpdate(unittest.TestCase):
         with h5py.File(self.outfile_name, 'r') as h5file:
             self.assertEqual(h5file.attrs.get('generated-by'), expected_version)
             self.assertEqual(h5file.attrs.get('update-date'), update_date)
+
+
+class TestUtilities(unittest.TestCase):
+    infile_name = 'test_data/test_hic.hic'
+
+    def test_print_stderr(self):
+        with captured_output() as (out, err):
+            hic2cool_print_stderr('error message!')
+        read_err = err.getvalue().strip()
+        self.assertTrue('error message!' in read_err)
+
+    def test_force_exit(self):
+        """
+        Open a dummy file and make sure it is closed
+        """
+        req = open(self.infile_name, 'rb')
+        with captured_output() as (out, err):
+            with self.assertRaises(SystemExit) as exc:
+                hic2cool_force_exit('fatal error!', req)
+            self.assertEqual(exc.exception.code, 1)
+        read_err = err.getvalue().strip()
+        self.assertTrue('fatal error!' in read_err)
+        self.assertTrue(req.closed)  # file closed by force_exit
 
 
 if __name__ == '__main__':
