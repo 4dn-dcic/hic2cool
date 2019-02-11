@@ -12,15 +12,7 @@ Yue Wu (https://github.com/theaidenlab/straw). The cooler file writing was based
 off of much of the CLI code contained in this repo:
 https://github.com/mirnylab/cooler.
 
-The most import method is hic2cool_convert, which can be imported if the package
-is pip installed.
-
-Usage on the command line is: python hic2cool.py infile outfile resolution
-normalization include_MT If an invalid resolution is given (i.e. one that does
-not correspond to a hic resolution, the program will terminate and prompt you to
-enter a valid one) See the README or main() function in this file for more usage
-information.
-
+See README for more information
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import sys
@@ -31,14 +23,20 @@ import math
 import copy
 import mmap
 import os
-from datetime import datetime
-
-import numpy as np
+import shutil
+import cooler
 import h5py
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from collections import OrderedDict
 from ._version import __version__
 
-# are there warnings?
-WARN = False
+try:
+    use_input = input
+except NameError:
+    use_input = raw_input
+
 # Cooler metadata
 MAGIC = "HDF5::Cooler"
 URL = "https://github.com/4dn-dcic/hic2cool"
@@ -53,6 +51,7 @@ BIN1OFFSET_DTYPE = np.int64
 NORM_DTYPE = np.float64
 PIXEL_FIELDS = ('bin1_id', 'bin2_id', 'count')
 CHUNK_DTYPE = {'names':['bin1_id','bin2_id','count'], 'formats':[BIN_DTYPE, BIN_DTYPE, COUNT_DTYPE]}
+H5OPTS = {'compression': 'gzip', 'compression_opts': 6, 'shuffle': True}
 
 
 # read function
@@ -84,9 +83,9 @@ def read_header(req):
     magic_string = struct.unpack(b'<3s', req.read(3))[0]
     req.read(1)
     if (magic_string != b"HIC"):
-        print('This does not appear to be a HiC file; '
-              'magic string is incorrect')
-        sys.exit()
+        error_string = ('... This does not appear to be a HiC file; '
+                       'magic string is incorrect')
+        force_exit(error_string, req)
     global version
     version = struct.unpack(b'<i', req.read(4))[0]
     masterindex = struct.unpack(b'<q', req.read(8))[0]
@@ -156,7 +155,7 @@ def read_footer(f, buf, masterindex):
     # normalized (norm != 'NONE')
     possibleNorms = f.read(4)
     if not possibleNorms:
-        print('WARNING. No normalization vectors found in the hic file.')
+        print_stderr('!!! WARNING. No normalization vectors found in the hic file.')
         return cpair_info, expected, factors, norm_info
     nExpectedValues = struct.unpack(b'<i', possibleNorms)[0]
     for _ in range(nExpectedValues):
@@ -332,7 +331,7 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize,
     # that will contain the entire list of c1/c2 counts
     join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
     if unit not in ["BP", "FRAG"]:
-        error_string = "Unit specified incorrectly, must be one of <BP/FRAG>"
+        error_string = "!!! ERROR. Unit specified incorrectly, must be one of <BP/FRAG>"
         force_exit(error_string, req)
     c1 = int(chr_key.split('_')[0])
     c2 = int(chr_key.split('_')[1])
@@ -341,7 +340,8 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize,
     except KeyError:
         WARN = True
         if show_warnings:
-            print('The intersection between chr %s and chr %s cannot be found in the hic file.' % (c1, c2))
+            print_stderr('... The intersection between chr %s and chr %s cannot be found in the hic file.'
+                  % (c1, c2))
         return join_chunk
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
@@ -380,7 +380,6 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resoluti
     For an in-depth explanation of the data structure, please see:
     http://cooler.readthedocs.io/en/latest/datamodel.html
     """
-    h5opts = dict(compression='gzip', compression_opts=6)
     with h5py.File(outfile, "a") as h5file:
         # if multi_res, organize resolutions as individual cooler files
         # as groups under resolutions. so, a res of 5kb would be
@@ -395,18 +394,18 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resoluti
             h5resolution = h5file
         # chroms
         grp = h5resolution.create_group('chroms')
-        chr_names = write_chroms(grp, chr_info, h5opts)
+        chr_names = write_chroms(grp, chr_info)
         # bins
         bin_table, chr_offsets, by_chr_bins, by_chr_offset_map = create_bins(chr_info, resolution)
         grp = h5resolution.create_group('bins')
-        write_bins(grp, req, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, h5opts, show_warnings)
+        write_bins(grp, req, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, show_warnings)
         n_bins = len(bin_table)
         # indexes (just initialize bin1offets)
         grp = h5resolution.create_group('indexes')
-        write_chrom_offset(grp, chr_offsets, h5opts)
+        write_chrom_offset(grp, chr_offsets)
         # pixels (written later)
         grp = h5resolution.create_group('pixels')
-        initialize_pixels(grp, n_bins, h5opts)
+        initialize_pixels(grp, n_bins)
         # w.r.t. metadata, each resolution is considered a full file
         info = copy.deepcopy(metadata) # initialize with metadata from header
         info['nchroms'] = len(chr_names)
@@ -417,12 +416,13 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resoluti
         info['format-url'] = URL
         info['generated-by'] = 'hic2cool-' + __version__
         info['genome-assembly'] = genome
-        info['creation-date'] = datetime.now().isoformat()
+        # in utc
+        info['creation-date'] = datetime.utcnow().isoformat()
         h5resolution.attrs.update(info)
     return by_chr_offset_map, by_chr_bins
 
 
-def write_chroms(grp, chrs, h5opts):
+def write_chroms(grp, chrs):
     """
     Write the chroms table, which includes chromosome names and length
     """
@@ -437,13 +437,13 @@ def write_chroms(grp, chrs, h5opts):
         shape=(len(chr_names),),
         dtype=CHROM_DTYPE,
         data=chr_names,
-        **h5opts)
+        **H5OPTS)
     grp.create_dataset(
         'length',
         shape=(len(chr_lengths),),
         dtype=CHROMSIZE_DTYPE,
         data=chr_lengths,
-        **h5opts)
+        **H5OPTS)
     return chr_names
 
 
@@ -482,7 +482,7 @@ def create_bins(chrs, binsize):
     return np.array(bins_array), np.array(offsets), by_chr_bins, by_chr_offsets
 
 
-def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h5opts, show_warnings):
+def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, show_warnings):
     """
     Write the bins table, which has columns: chrom, start (in bp), end (in bp),
     and one column for each normalization type, named for the norm type.
@@ -503,17 +503,17 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h
                        shape=(n_bins,),
                        dtype=enum_dtype,
                        data=chrom_ids,
-                       **h5opts)
+                       **H5OPTS)
     grp.create_dataset('start',
                        shape=(n_bins,),
                        dtype=COORD_DTYPE,
                        data=starts,
-                       **h5opts)
+                       **H5OPTS)
     grp.create_dataset('end',
                        shape=(n_bins,),
                        dtype=COORD_DTYPE,
                        data=ends,
-                       **h5opts)
+                       **H5OPTS)
     # write columns for normalization vectors
     for norm in NORMS:
         norm_data = []
@@ -524,20 +524,23 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h
             except KeyError:
                 WARN = True
                 if show_warnings:
-                    print('WARNING. Normalization vector %s does not exist for chr idx %s.' % (norm, chr_idx))
-                # add a vector of 0's with length equal to by_chr_bins[chr_idx]
-                norm_data.extend([0]*chr_bin_end)
+                    print_stderr('!!! WARNING. Normalization vector %s does not exist for chr idx %s.'
+                          % (norm, chr_idx))
+                # add a vector of nan's for missing vectors
+                norm_data.extend([np.nan]*chr_bin_end)
                 continue
             norm_vector = read_normalization_vector(req, buf, norm_key)
-            # possible issue to look into
+            # NOTE: possible issue to look into
             # norm_vector returned by read_normalization_vector has an extra
             # entry at the end (0.0) that is never used and causes the
             # norm vectors to be longer than n_bins for a given chr
             # restrict the length of norm_vector to chr_bin_end for now.
-            norm_data.extend(list(map(norm_convert, norm_vector[:chr_bin_end])))
+            norm_data.extend(norm_vector[:chr_bin_end])
+            # we are no longer performing the inversion of hic weights
+            # norm_data.extend(list(map(norm_convert, norm_vector[:chr_bin_end])))
         if len(norm_data) != n_bins:
             error_str = (
-                'ERROR. Length of normalization vector %s does not match the'
+                '!!! ERROR. Length of normalization vector %s does not match the'
                 ' number of bins.\nThis is likely a problem with the hic file' % (norm))
             force_exit(error_str, req)
         grp.create_dataset(
@@ -545,20 +548,26 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, h
             shape=(len(norm_data),),
             dtype=NORM_DTYPE,
             data=np.array(norm_data, dtype=NORM_DTYPE),
-            **h5opts)
+            **H5OPTS)
 
 
 def norm_convert(val):
     """
-    Convert between hic and cool normalization values
+    hic2cool now just uses hic normalization vectors as-is,
+    without attempting to invert them to match cooler convention. This function
+    is now only used with `hic2cool update` to revert cooler weights to their
+    original hic values.
+
+    Simply invert norm vectors, since hic norms are divisive and cooler
+    weights are multiplicative.
     """
     if val != 0.0:
         return 1 / val
     else:
-        return np.inf
+        return np.nan
 
 
-def write_chrom_offset(grp, chr_offsets, h5opts):
+def write_chrom_offset(grp, chr_offsets):
     """
     Write the chrom offset information (bin offset information written later)
     """
@@ -567,10 +576,10 @@ def write_chrom_offset(grp, chr_offsets, h5opts):
         shape=(len(chr_offsets),),
         dtype=CHROMOFFSET_DTYPE,
         data=chr_offsets,
-        **h5opts)
+        **H5OPTS)
 
 
-def initialize_pixels(grp, n_bins, h5opts):
+def initialize_pixels(grp, n_bins):
     """
     Initialize the pixels datasets with a given max_size (expression from
     cooler). These are resizable datasets that are chunked with size of
@@ -583,20 +592,20 @@ def initialize_pixels(grp, n_bins, h5opts):
                        dtype=BIN_DTYPE,
                        shape=(init_size,),
                        maxshape=(max_size,),
-                       **h5opts)
+                       **H5OPTS)
     grp.create_dataset('bin2_id',
                        dtype=BIN_DTYPE,
                        shape=(init_size,),
                        maxshape=(max_size,),
-                       **h5opts)
+                       **H5OPTS)
     grp.create_dataset('count',
                        dtype=COUNT_DTYPE,
                        shape=(init_size,),
                        maxshape=(max_size,),
-                       **h5opts)
+                       **H5OPTS)
 
 
-def write_bin1_offset(grp, bin1_offsets, h5opts):
+def write_bin1_offset(grp, bin1_offsets):
     """
     Write the bin1_offset information
     """
@@ -605,7 +614,7 @@ def write_bin1_offset(grp, bin1_offsets, h5opts):
         shape=(len(bin1_offsets),),
         dtype=BIN1OFFSET_DTYPE,
         data=bin1_offsets,
-        **h5opts)
+        **H5OPTS)
 
 
 def write_pixels_chunk(outfile, resolution, chunks, multi_res):
@@ -630,7 +639,7 @@ def write_pixels_chunk(outfile, resolution, chunks, multi_res):
     After pixels group has been written and bin1_offsets written within
     the indexes group, the temporary chunks dataset is deleted.
     """
-    h5opts = dict(compression='gzip', compression_opts=6)
+
     with h5py.File(outfile, "r+") as h5file:
         h5resolution = h5file['resolutions'][str(resolution)] if multi_res else h5file
         n_bins = h5resolution.attrs['nbins']
@@ -649,7 +658,6 @@ def finalize_resolution_cool(outfile, resolution, multi_res):
     """
     Finally, write bin1_offsets and nnz attr for one resolution in the cool file
     """
-    h5opts = dict(compression='gzip', compression_opts=6)
     with h5py.File(outfile, "r+") as h5file:
         h5resolution = h5file['resolutions'][str(resolution)] if multi_res else h5file
         nnz = h5resolution['pixels']['count'].shape[0]
@@ -662,7 +670,7 @@ def finalize_resolution_cool(outfile, resolution, multi_res):
             offsets[curr_val:value + 1] = start
             curr_val = value + 1
         offsets[curr_val:] = nnz
-        write_bin1_offset(h5resolution['indexes'], offsets, h5opts)
+        write_bin1_offset(h5resolution['indexes'], offsets)
         # update attributes with nnz
         info = {'nnz': nnz}
         h5resolution.attrs.update(info)
@@ -736,41 +744,128 @@ def write_zooms_for_higlass(h5res):
             higlass_compat = False
             break
     if not higlass_compat:
-        print('WARNING: This hic file is not higlass compatible! Will not add [max-zoom] attribute.')
+        print_stderr('!!! WARNING: This hic file is not higlass compatible! Will not add [max-zoom] attribute.')
         return
 
-    print('INFO: This hic file is higlass compatible! Adding [max-zoom] attribute.')
+    print('... INFO: This hic file is higlass compatible! Adding [max-zoom] attribute.')
     max_zoom = len(resolutions) - 1
 
     # Assign max-zoom attribute
     h5res.attrs['max-zoom'] = max_zoom
-    print('max-zoom: {}'.format(max_zoom))
+    print('... max-zoom: {}'.format(max_zoom))
 
     # Make links to zoom levels
     for i, res in enumerate(resolutions):
-        print('zoom {}: {}'.format(i, res))
+        print('... zoom {}: {}'.format(i, res))
         h5res[str(i)] = h5py.SoftLink('/resolutions/{}'.format(res))
 
 
-def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, command_line=False):
+def update_invert_weights(writefile):
+    """
+    Invert all the weights from each resolution (if a mult-res file) or the
+    top level (if a single-res file)
+    """
+    with h5py.File(writefile) as h5_file:
+        if 'resolutions' in h5_file:
+            for res in h5_file['resolutions']:
+                update_invert_weight_for_resolution(h5_file['resolutions'][res]['bins'], res=res)
+        else:
+            update_invert_weight_for_resolution(h5_file['bins'])
+
+
+def update_invert_weight_for_resolution(h5_data, res=None):
+    """
+    Access the bins table, find the weights, and invert
+    """
+    found_weights = [val for val in h5_data if val not in ['chrom', 'start', 'end']]
+    for weight in found_weights:
+        h5_weight = h5_data[weight][:]
+        h5_data[weight][:] = list(map(norm_convert, h5_weight))
+    if res:
+        print('... For resolution %s, inverted following weights: %s' % (res, found_weights))
+    else:
+        print('... Inverted following weights: %s' % found_weights)
+
+
+def prepare_hic2cool_update(version_nums):
+    """
+    Find what must be done when actually running `hic2cool update`
+    Determines what updates are necessary based off of version numbers
+    Version numbers is a list of ints in form: [major, minor, release]
+    """
+    updates = []
+    # normalization vectors were inverted before version 0.5.0
+    if version_nums[0] == 0 and version_nums[1] < 5:
+        updates.append(
+            {
+                'title': 'Invert weights',
+                'effect': 'Invert cooler weights so that they match original hic normalization values',
+                'detail': 'cooler uses multiplicative weights and hic uses divisive weights. Before version 0.5.0, hic2cool inverted normalization vectors for consistency with cooler behavior, but now that is no longer done for consistency with 4DN analysis pipelines.',
+                'function': update_invert_weights
+            }
+        )
+    return updates
+
+
+def print_formatted_updates(updates, writefile):
+    """
+    Simple function to display updates for the user to confirm
+    Updates are populated using prepare_hic2cool_update
+    """
+    print('### Updates found. Will upgrade hic2cool file to version %s' % __version__)
+    print('### This is what will change:')
+    for upd in updates:
+        print('- %s\n    - Effect: %s\n    - Detail: %s' % (upd['title'], upd['effect'], upd['detail']))
+    print('### Will write to %s\n### Continue? [y/n]' % writefile)
+
+
+def run_hic2cool_updates(updates, infile, writefile):
+    """
+    Actually run the updates given by the updates array
+    """
+    # create a copy of the infile, if writefile differs
+    if infile != writefile:
+        shutil.copy(infile, writefile)
+    print('### Updating...')
+    for upd in updates:
+        print('... Running: %s' % upd['title'])
+        upd['function'](writefile)
+        print('... Finished: %s' % upd['title'])
+    # now update the generated-by attribute for the file
+    with h5py.File(writefile, 'r+') as h5_file:
+        if 'resolutions' in h5_file:
+            for res in h5_file['resolutions']:
+                h5_file['resolutions'][res].attrs['generated-by'] = 'hic2cool-' + __version__
+                h5_file['resolutions'][res].attrs['update-date'] = datetime.now().isoformat()
+                print('... Updated metadata for resolution %s' % res)
+        else:
+            h5_file.attrs['generated-by'] = 'hic2cool-' + __version__
+            h5_file.attrs['update-date'] = datetime.now().isoformat()
+            print('... Updated metadata')
+    print('### Finished! Output written to: %s' % writefile)
+
+
+def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
     Opens outfile and writes in form of .cool file
+
     Params:
     <infile> str .hic filename
     <outfile> str .cool output filename
     <resolution> int bp bin size. If 0, use all. Defaults to 0.
                 Final .cool structure will change depending on this param (see README)
     <show_warnings> bool. If True, print out WARNING messages
-    <command_line> bool. True if executing from run_hic.py. Prompts hic headers
-                be printed to stdout.
+    <silent> bool. If true, hide standard output
     """
     unit = 'BP'  # only using base pair unit for now
     resolution = int(resolution)
     # Global hic normalization types used
     global NORMS
     NORMS = []
+    global WARN
+    WARN = False
     req = open(infile, 'rb')
     buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
     used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
@@ -780,25 +875,27 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, command
     del factors
     # used to hold chr_chr key intersections missing from the hic file
     warn_chr_keys = []
-    if command_line:  # print hic header info for command line usage
+    if not silent:  # print hic header info for command line usage
         chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
-        print('################')
-        print('### hic2cool ###')
-        print('################')
-        print('hic file header info:')
-        print('Chromosomes: ', chr_names)
-        print('Resolutions: ', resolutions)
-        print('Genome: ', genome)
+        print('##########################')
+        print('### hic2cool / convert ###')
+        print('##########################')
+        print('### Header info from hic')
+        print('... Chromosomes: ', chr_names)
+        print('... Resolutions: ', resolutions)
+        print('... Normalizations: ', NORMS)
+        print('... Genome: ', genome)
     # ensure user input binsize is a resolution supported by the hic file
     if resolution != 0 and resolution not in resolutions:
         error_str = (
-            'ERROR. Given binsize (in bp) is not a supported resolution in '
+            '!!! ERROR. Given binsize (in bp) is not a supported resolution in '
             'this file.\nPlease use 0 (all resolutions) or use one of: ' +
             str(resolutions))
         force_exit(error_str, req)
     use_resolutions = resolutions if resolution == 0 else [resolution]
     multi_res = len(use_resolutions) > 1
     # do some formatting on outfile filename
+    # .mcool is the 4DN supported multi-res format, but allow .multi.cool too
     if outfile[-11:] == '.multi.cool':
         if not multi_res:
             outfile = ''.join([outfile[:-11] + '.cool'])
@@ -807,11 +904,11 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, command
             outfile = ''.join([outfile[:-6] + '.cool'])
     elif outfile[-5:] == '.cool':
         if multi_res:
-            outfile = ''.join([outfile[:-5] + '.multi.cool'])
+            outfile = ''.join([outfile[:-5] + '.mcool'])
     else:
-        # unexpected file ending. just append .cool or .multi.cool
+        # unexpected file ending. just append .cool or .cool
         if multi_res:
-            outfile = ''.join([outfile + '.multi.cool'])
+            outfile = ''.join([outfile + '.mcool'])
         else:
             outfile = ''.join([outfile + '.cool'])
     # check if the desired path exists. try to remove, if so
@@ -819,13 +916,14 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, command
         try:
             os.remove(outfile)
         except OSError:
-            error_string = ("hic2cool is attempting to write to %s, which is a "
-                "file that already exists. This can cause issues with the hdf5 "
-                "structure. Please remove that file or choose a different output "
-                "name." % (outfile))
+            error_string = ("!!! ERROR. Output file path %s already exists. This"
+                " can cause issues with the hdf5 structure. Please remove that"
+                " file or choose a different output name." % (outfile))
             force_exit(error_string, req)
         if WARN:
-            print('WARNING: removed pre-existing file: %s' % (outfile))
+            print_stderr('!!! WARNING: removed pre-existing file: %s' % (outfile))
+
+    print('### Converting')
     for binsize in use_resolutions:
         t_start = time.time()
         # initialize cooler file. return per resolution bin offset maps
@@ -859,13 +957,212 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, command
         finalize_resolution_cool(outfile, binsize, multi_res)
         t_parse = time.time()
         elapsed_parse = t_parse - t_start
-        if command_line:
-            print('Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
+        if not silent:
+            print('... Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
-    if command_line:
+    if not silent:
         if WARN and not show_warnings:
-            print('Warnings were found in this run. Run in show_warnings mode (-v) to display them.')
-        print(''.join(['hic2cool is finished! Output written to: ', outfile]))
+            print('... Warnings were found in this run. Run with -v to display them.')
+        print('### Finished! Output written to: %s' % outfile)
+        if multi_res:
+            print('... This file is higlass compatible.')
+        else:
+            print('... This file is single resolution and NOT higlass compatible. Run with `-r 0` for multi-resolution.')
+
+
+def hic2cool_extractnorms(infile, outfile, exclude_mt=False, show_warnings=False, silent=False):
+    """
+    Find all normalization vectors in the given hic file at all resolutions and
+    attempts to add them to the given cooler file. Does not add any metadata
+    to the cooler file. TODO: should we add `extract-norms-date` attr?
+
+    Params:
+    <infile> str .hic filename
+    <outfile> str .cool output filename
+    <exclude_mt> bool. If True, ignore MT contacts. Defaults to False.
+    <show_warnings> bool. If True, print out WARNING messages
+    <silent> bool. If true, hide standard output
+    """
+    unit = 'BP' # only using base pair unit for now
+    # Global hic normalization types used
+    global NORMS
+    NORMS = []
+    global WARN
+    WARN = False
+    req = open(infile, 'rb')
+    buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
+    used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
+    pair_footer_info, expected, factors, norm_info = read_footer(req, buf, masteridx)
+    # expected/factors unused for now
+    del expected
+    del factors
+
+    chr_names = [used_chrs[key][1] for key in used_chrs.keys()]
+    if not silent: # print hic header info for command line usage
+        print('################################')
+        print('### hic2cool / extract-norms ###')
+        print('################################')
+        print('Header info from hic:')
+        print('... Chromosomes: ', chr_names)
+        print('... Resolutions: ', resolutions)
+        print('... Normalizations: ', NORMS)
+        print('... Genome: ', genome)
+
+    if exclude_mt: # remove mitchondrial chr by name if this flag is set
+        # try to find index of chrM (a.k.a chrMT) if it is present
+        mt_names = ['m', 'mt', 'chrm', 'chrmt']
+        found_idxs = [idx for idx, fv in used_chrs.items() if fv[1].lower() in mt_names]
+        if len(found_idxs) == 1:
+            excl = used_chrs.pop(found_idxs[0], None)
+            if not silent: print('... Excluding chromosome %s with index %s' % (excl[1], excl[0]))
+        if len(found_idxs) > 1:
+            error_str = (
+                'ERROR. More than one chromosome was found when attempting to'
+                ' exclude MT. Found chromosomes: %s' % chr_names
+            )
+            force_exit(error_str, req)
+        else:
+            if not silent: print('... No chromosome found when attempting to exclude MT.')
+
+    # exclude 'all' from chromsomes
+    chromosomes = [uc[1] for uc in used_chrs.values() if uc[1].lower() != 'all']
+    lengths = [uc[2] for uc in used_chrs.values() if uc[1].lower() != 'all']
+    chromsizes = pd.Series(index=chromosomes, data=lengths)
+
+    cooler_groups = {}
+    for path in cooler.fileops.list_coolers(outfile):
+        binsize = cooler.Cooler(outfile + '::' + path).info['bin-size']
+        cooler_groups[binsize] = path
+    if not silent:
+        print('### Found cooler contents:')
+        print('... %s' % cooler_groups)
+
+    for norm in NORMS:
+        for binsize in resolutions:
+            if binsize not in cooler_groups:
+                if not silent:
+                    print('... Skip resolution %s; it is not in cooler file' % binsize)
+                continue
+            if not silent:
+                print('... Extracting %s normalization vector at %s BP' % (norm, binsize))
+            chrom_map = {}
+            bins = cooler.binnify(chromsizes, binsize)
+            lengths_in_bins = bins.groupby('chrom').size()
+            for chr_val in [uc for uc in used_chrs.values() if uc[1].lower() != 'all']:
+                chr_num_bins = lengths_in_bins.loc[chr_val[1]]
+                try:
+                    norm_key = norm_info[norm, unit, binsize, chr_val[0]]
+                except KeyError:
+                    WARN = True
+                    if show_warnings and not silent:
+                        print_stderr('!!! WARNING. Normalization vector %s does not exist for %s.'
+                              % (norm, chr_val[1]))
+                    # add a vector of 0's with length equal to by_chr_bins[chr_idx]
+                    norm_vector = [np.nan] * chr_num_bins
+                else:
+                    norm_vector = read_normalization_vector(req, buf, norm_key)[:chr_num_bins]
+                chrom_map[chr_val[1]] = norm_vector
+
+            # hic normalization vector lengths have inconsistent lengths...
+            # truncate appropriately
+            bins[norm] = np.concatenate([chrom_map[chrom] for chrom in chromosomes])
+            if not silent:
+                print('... Writing to cool file ...')
+                print('%s\n... Truncated ...' % bins.head())
+            group_path = cooler_groups[binsize]
+            cooler.create.append(
+                outfile + '::' + group_path,
+                'bins',
+                {norm: bins[norm].values},
+                force=True
+            )
+    req.close()
+    if not silent:
+        if WARN and not show_warnings:
+            print('... Warnings were found in this run. Run with -v to display them.')
+        print('### Finished! Output written to: %s' % outfile)
+
+
+def hic2cool_update(infile, outfile='', show_warnings=False, silent=False):
+    """
+    Main function that reads the version of a given input cool file produced
+    by hic2cool and performs different upgrading operations.
+    Adds 'update-date' metadata to cooler attributes
+
+    Params:
+    <infile> str .cool input filename
+    <outfile> str outpul filename (optional)
+    <show_warnings> bool. If True, print out WARNING messages
+    <silent> bool. If true, hide standard output
+    """
+    if not silent:
+        print('#########################')
+        print('### hic2cool / update ###')
+        print('#########################')
+    # open the file, find the resolutions and used hic2cool version
+    with h5py.File(infile, 'r+') as h5_in:
+        if 'resolutions' in h5_in:
+            h5_attrs = {}
+            resolutions = list(h5_in['resolutions'])
+            # populate h5_attrs
+            for res in resolutions:
+                found_attrs = dict(h5_in['resolutions'][res].attrs)
+                if not h5_attrs:
+                    h5_attrs.update(found_attrs)
+                else:
+                    # ensure found version matches between resolutions
+                    if found_attrs.get('generated_by') != h5_attrs.get('generated_by'):
+                        error_string = "!!! ERROR. Input file has inconsistent 'generated-by' attributes"
+                        force_exit(error_string)
+        else:
+            h5_attrs = dict(h5_in.attrs)
+            resolutions = [int(h5_attrs['bin-size'])]
+    if 'generated-by' not in h5_attrs:
+        WARN = True
+        error_string = "!!! ERROR. Input file doesn't seem to made by hic2cool. Exiting."
+        force_exit(error_string)
+
+    # parse out version info
+    h2c_version = h5_attrs['generated-by']
+    if not h2c_version.startswith('hic2cool-'):
+        error_string = "!!! ERROR. Malformed 'generated-by' attribute: %s" % h2c_version
+        force_exit(error_string)
+    version_str = h2c_version[9:].split('.')
+    if len(version_str) != 3 or any([ver for ver in version_str if not ver.isdigit()]):
+        error_string = "!!! ERROR. Malformed 'generated-by' attribute: %s" % h2c_version
+        force_exit(error_string)
+    version_nums = [int(x) for x in version_str]
+    creation_time = datetime.strptime(h5_attrs['creation-date'],
+                                      '%Y-%m-%dT%H:%M:%S.%f').replace(microsecond=0)
+    h2c_created = datetime.strftime(creation_time, '%Y-%m-%d at %H:%M:%S')
+    if h5_attrs.get('update-date'):
+        update_time = datetime.strptime(h5_attrs['update-date'],
+                                        '%Y-%m-%dT%H:%M:%S.%f').replace(microsecond=0)
+        h2c_updated = datetime.strftime(update_time, '%Y-%m-%d at %H:%M:%S')
+    else:
+        h2c_updated = 'None'
+    if not silent:
+        print('### Info from input file')
+        print('... File path: %s' % infile)
+        print('... Found creation timestamp: %s' % h2c_created)
+        print('... Found update timestamp: %s' % h2c_updated)
+        print('... Found resolutions: %s' % resolutions)
+        print('... Found version: %s' % h2c_version[9:])
+        print('... Target version: %s' % __version__)
+    writefile = outfile if outfile else infile
+    updates = prepare_hic2cool_update(version_nums)
+    if not updates:
+        print('### No updates found!\n... Exiting')
+        return
+    # make sure user is happy with the updates
+    if not silent:
+        print_formatted_updates(updates, writefile)
+        resp = ''
+        while not resp or resp.lower() not in ['y', 'n', 'yes', 'no']:
+            resp = use_input('[y/n] ')
+        if resp.lower() in ['n', 'no']:
+            return
+    run_hic2cool_updates(updates, infile, writefile)
 
 
 def memory_usage():
@@ -881,11 +1178,19 @@ def memory_usage():
     return mem
 
 
-def force_exit(message, req):
+def print_stderr(message):
+    """
+    Simply print str message to stderr
+    """
+    print(message, file=sys.stderr)
+
+
+def force_exit(message, req=None):
     """
     Exit the program due to some error. Print out message and close the given
     input files.
     """
-    req.close()
-    print(message, file=sys.stderr)
-    sys.exit()
+    if req:
+        req.close()
+    print_stderr(message)
+    sys.exit(1)
