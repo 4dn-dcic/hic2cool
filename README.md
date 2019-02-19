@@ -2,11 +2,9 @@
 
 [![Build Status](https://travis-ci.org/4dn-dcic/hic2cool.svg?branch=master)](https://travis-ci.org/4dn-dcic/hic2cool)
 
-A converter between .hic files (from juicer) and .cool files (for cooler).
+Converter between hic files (from juicer) and single-resolution or multi-resolution cool files (for cooler).  Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as an imported package or a stand-alone Python tool for command line conversion
 
-Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as a simple imported package or a stand-alone Python file.
-
-The .hic parsing code is based off the [straw project](https://github.com/theaidenlab/straw) by Neva C. Durand and Yue Wu. The hdf5-based structure used for .cool file writing is based off code from the [cooler repository](https://github.com/mirnylab/cooler).
+The hic parsing code is based off the [straw project](https://github.com/theaidenlab/straw) by Neva C. Durand and Yue Wu. The hdf5-based structure used for cooler file writing is based off code from the [cooler repository](https://github.com/mirnylab/cooler).
 
 ## Important
 
@@ -24,9 +22,9 @@ hic2cool_convert(<infile>, <outfile>, <resolution (optional)>, <warnings (option
 ```
 
 
-## Converting files using the command line:
+## Converting files using the command line
 
-The main use of hic2cool is converting between filetypes. If you install hic2cool itself using pip, you can do this on the command line with:
+The main use of hic2cool is converting between filetypes using `hic2cool convert`. If you install hic2cool itself using pip, you use it on the command line with:
 ```
 $ hic2cool convert <infile> <outfile> -r <resolution>
 ```
@@ -41,7 +39,7 @@ You can alternatively build the hic2cool package with:
 $ python setup.py install
 ```
 
-Then, from the root directory, run:
+Then, execute the Python code from the root directory with:
 ```
 $ python -m hic2cool convert <infile> <outfile> -r <resolution>
 ```
@@ -66,7 +64,7 @@ Running hic2cool from the command line will cause some helpful information about
 
 
 ## Output file structure
-If you elect to use all resolutions, a multi-res .multi.cool file will be produced. This changes the hdf5 structure of the file from a typical .cool file. Namely, all of the information needed for a complete cooler file is stored in separate hdf5 groups named by the individual resolutions. The hdf5 hierarchy is organized as such:
+If you elect to use all resolutions, a multi-resolution .mcool file will be produced. This changes the hdf5 structure of the file from a typical .cool file. Namely, all of the information needed for a complete cooler file is stored in separate hdf5 groups named by the individual resolutions. The hdf5 hierarchy is organized as such:
 
 File --> 'resolutions' --> '###' (where ### is the resolution in bp).
 For example, see the code below that generates a multi-res file and then accesses the specific resolution of 10000 bp.
@@ -100,13 +98,13 @@ To apply the hic normalization transformations in higlass, right click on the ti
 
 `"<name of tileset>" --> "Configure Series" --> "Transforms" --> "<norm>"`
 
-![higlass img](test_data/higlass_apply_transform.png)
+![higlass img](https://raw.githubusercontent.com/4dn-dcic/hic2cool/master/test_data/higlass_apply_transform.png)
 
 
 ## Updating hic2cool coolers
 As of hic2cool version 0.5.0, there was a critical change in how hic normalization vectors are handled in the resulting cooler files. Prior to 0.5.0, hic normalization vectors were inverted by hic2cool. The rationale for doing this is that hic uses divisive normalization values, whereas cooler uses multiplicative values. However, higlass and the 4DN analysis pipelines specifically handled the divisive normalization values, so hic2cool now handles them the same way.
 
-In the near future, there will be a cooler release to correctly handle divisive hic normalization values when balancing.
+In the near future, there will be a `cooler` package release to correctly handle divisive hic normalization values when balancing.
 
 To update a hic2cool cooler, simply run:
 ```
@@ -125,8 +123,10 @@ hic2cool extract-norms <hic file> <cooler file>
 You may also provide the optional `-e` flag, which will cause the mitchondrial chromosome to automatically be omitted from the extraction. This is found by name; the code specifically looks for one of `['M', 'MT', 'chrM', 'chrMT']` (in a case-insensitive way). Just like with `hic2cool convert`, you can also provide `-s` and `-w` [arguments](#arguments-for-hic2cool-convert).
 
 
-## Changelog:
+## Changelog
 
+### 0.5.1
+Fixed packaging issue by adding MANIFEST.in and made some documentation/pypi edits
 ### 0.5.0
 Large release that changes how hic2cool is run
 * hic2cool is now executed with `hic2cool <mode>`, where mode is one of: `[convert, update, extract-norms]`
