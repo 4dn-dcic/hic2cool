@@ -5,19 +5,27 @@
 # based off of much of the CLI code contained in this
 # repo: https://github.com/mirnylab/cooler.
 
+import io
 from setuptools import setup
+from os import path
 
-with open('requirements.txt') as f:
+this_directory = path.abspath(path.dirname(__file__))
+with io.open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+    long_description = f.read()
+
+with io.open(path.join(this_directory, 'requirements.txt')) as f:
     requires = f.read().splitlines()
 requires = [req.strip() for req in requires]
 
-this_version = open("hic2cool/_version.py").readlines()[-1].split()[-1].strip("\"'")
+this_version = io.open("hic2cool/_version.py").readlines()[-1].split()[-1].strip("\"'")
 
 setup(
     name = "hic2cool",
     version = this_version,
     packages = ['hic2cool'],
     description = """Converter between .hic files (from juicer) and single-resolution or multi-resolution .cool files (for cooler).  Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as a simple imported package or a stand-alone Python file for command line conversion.""",
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     url = "https://github.com/4dn-dcic/hic2cool",
     download_url = "https://github.com/4dn-dcic/hic2cool/tarball/" + this_version,
     author = "Carl Vitzthum",
