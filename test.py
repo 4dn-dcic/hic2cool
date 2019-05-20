@@ -48,10 +48,11 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
     """
     infile_name = 'test_data/test_hic.hic'
     infile_no_norms = 'test_data/test_hic_no_norms.hic'
-    outfile_name = 'test_data/test_cool_100000.cool'
-    outfile_name2 = 'test_data/test_cool_2500000.cool'
-    outfile_name_all = 'test_data/test_cool_multi_res.mcool'
-    outfile_no_norms = 'test_data/test_cool_no_norms.mcool'
+    outfile_name = 'test_data/OUT_test_cool_100000.cool'
+    outfile_name2 = 'test_data/OUT_test_cool_2500000.cool'
+    outfile_name_all = 'test_data/OUT_test_cool_multi_res.mcool'
+    outfile_no_norms = 'test_data/OUT_test_cool_no_norms.mcool'
+    copy1_name = 'test_data/OUT_test_cool_no_norms_copy1.mcool'
     binsize = 100000
     binsize2 = 2500000
 
@@ -132,12 +133,11 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
         # outfile: [1000000, 16000000, 2000000, 4000000, 500000, 8000000]
         # so, only expected 1000000 and 500000 to be shared
         # copy outfile twice
-        copy1_name = 'test_data/test_cool_no_norms_copy1.mcool'
-        shutil.copy(self.outfile_no_norms, copy1_name)
+        shutil.copy(self.outfile_no_norms, self.copy1_name)
         shared = [1000000, 500000]
         not_shared = [2500000, 250000, 100000, 50000, 25000, 10000, 5000]
         with captured_output() as (out, err):
-            hic2cool_extractnorms(self.infile_name, copy1_name,
+            hic2cool_extractnorms(self.infile_name, self.copy1_name,
                                   exclude_mt=True, show_warnings=True)
         read_out = out.getvalue().strip()
         for share_res in shared:
@@ -147,12 +147,12 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
         self.assertTrue('Excluding chromosome chrMT with index 25' in read_out)
         # ensure that running the function again results the same norms
         # run without exclude_mt, which is actually missing anyways
-        init_md5, bin_lens = self.get_norms_content_md5(copy1_name, shared)
+        init_md5, bin_lens = self.get_norms_content_md5(self.copy1_name, shared)
         with captured_output() as (out2, err2):
-            hic2cool_extractnorms(self.infile_name, copy1_name, show_warnings=True)
+            hic2cool_extractnorms(self.infile_name, self.copy1_name, show_warnings=True)
         read_err = err2.getvalue().strip()
         self.assertTrue('Normalization vector KR does not exist for chrMT' in read_err)
-        fin_md5, _ = self.get_norms_content_md5(copy1_name, shared, bin_lens)
+        fin_md5, _ = self.get_norms_content_md5(self.copy1_name, shared, bin_lens)
         self.assertEqual(init_md5, fin_md5)
         # ensure that norm values match between different runs of extract-norms
         diff_md5, _ = self.get_norms_content_md5(self.outfile_name_all, shared, bin_lens)
@@ -167,10 +167,10 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
 
 
 class TestWithCooler(unittest.TestCase):
-    outfile_name = 'test_data/test_cool_100000.cool'
-    outfile_name2 = 'test_data/test_cool_2500000.cool'
-    outfile_name_all = 'test_data/test_cool_multi_res.mcool'
-    outfile_no_norms = 'test_data/test_cool_no_norms.mcool'
+    outfile_name = 'test_data/OUT_test_cool_100000.cool'
+    outfile_name2 = 'test_data/OUT_test_cool_2500000.cool'
+    outfile_name_all = 'test_data/OUT_test_cool_multi_res.mcool'
+    outfile_no_norms = 'test_data/OUT_test_cool_no_norms.mcool'
     binsize = 100000
     binsize2 = 2500000
 
@@ -179,9 +179,10 @@ class TestWithCooler(unittest.TestCase):
             cool = cooler.Cooler(h5file)
             cool_file = cool.filename.encode('utf-8')
             self.assertEqual(self.outfile_name.encode('utf-8'), cool_file)
-            # cooler info has 8 entries
-            self.assertEqual(len(cool.info), 10)
+            self.assertEqual(len(cool.info), 12)
             self.assertTrue(__version__ in cool.info['generated-by'])
+            self.assertTrue(isinstance(cool.info['format-version'], np.int64))
+            self.assertEqual(cool.info['storage-mode'], 'symmetric-upper')
             self.assertEqual(cool.info['nchroms'], 25)
             self.assertEqual(len(cool.chromnames), 25) # 'all' excluded
             self.assertEqual(self.binsize, cool.info['bin-size'])
@@ -200,16 +201,24 @@ class TestWithCooler(unittest.TestCase):
                 norm = str(norm) # needed for python 2
                 self.assertTrue(norm in bin_info)
                 bin_norm_val = bin_info[norm][bin_idx]  # value for weight in this bin
+                # cooler now automatically handles HIC vectors with divisive vectors
+                # test the inverted (non-handled divisive) matrix balancing as well
                 norm_matrix_res = cool.matrix(balance=norm).fetch('chr1:25000000-25100000')
+                invert_norm_mat_res = cool.matrix(balance=norm, divisive_weights=False).fetch('chr1:25000000-25100000')
                 self.assertEqual(norm_matrix_res.shape, (1,1))
+                self.assertEqual(invert_norm_mat_res.shape, (1,1))
                 # handle nan
                 if math.isnan(bin_norm_val):
                     self.assertTrue(math.isnan(norm_matrix_res[0][0]))
+                    self.assertTrue(math.isnan(invert_norm_mat_res[0][0]))
                 else:
                     # balanced value is equal to count * weight * weight
-                    calc_balanced_val = round(bin_raw_val * bin_norm_val * bin_norm_val, 4)
+                    calc_balanced_val = round(bin_raw_val / bin_norm_val / bin_norm_val, 4)
+                    calc_inverted_val = round(bin_raw_val * bin_norm_val * bin_norm_val, 4)
                     found_balanced_val = round(norm_matrix_res[0][0], 4)
+                    found_inverted_val = round(invert_norm_mat_res[0][0], 4)
                     self.assertEqual(calc_balanced_val, found_balanced_val)
+                    self.assertEqual(calc_inverted_val, found_inverted_val)
         # lastly check cooler dump raw count
         v = subprocess.check_output(['cooler', 'dump', self.outfile_name, '-t',
                                      'pixels', '-r', 'chr1:25000000-25100000'])
@@ -223,7 +232,7 @@ class TestWithCooler(unittest.TestCase):
             cool_file = cool.filename.encode('utf-8')
             self.assertEqual(self.outfile_name2.encode('utf-8'), cool_file)
             # cooler info has 8 entries
-            self.assertEqual(len(cool.info), 10)
+            self.assertEqual(len(cool.info), 12)
             self.assertTrue(__version__ in cool.info['generated-by'])
             self.assertEqual(len(cool.chromnames), 25)
             self.assertEqual(self.binsize2, cool.info['bin-size'])
@@ -247,8 +256,9 @@ class TestWithCooler(unittest.TestCase):
                 if math.isnan(bin_norm_val):
                     self.assertTrue(math.isnan(norm_matrix_res[9][9]))
                 else:
-                    # balanced value is equal to count * weight * weight
-                    calc_balanced_val = round(bin_raw_val * bin_norm_val * bin_norm_val, 4)
+                    # balanced value is equal to count / weight / weight
+                    # since this is a divisive weight
+                    calc_balanced_val = round(bin_raw_val / bin_norm_val / bin_norm_val, 4)
                     found_balanced_val = round(norm_matrix_res[9][9], 4)
                     self.assertEqual(calc_balanced_val, found_balanced_val)
         # lastly check cooler dump raw count
@@ -270,7 +280,7 @@ class TestWithCooler(unittest.TestCase):
             cool_file = cool.filename.encode('utf-8')
             self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
             # cooler info has 8 entries
-            self.assertEqual(len(cool.info), 10)
+            self.assertEqual(len(cool.info), 12)
             self.assertTrue(__version__ in cool.info['generated-by'])
             self.assertEqual(len(cool.chromnames), 25)
             self.assertEqual(250000, cool.info['bin-size'])
@@ -307,7 +317,7 @@ class TestWithCooler(unittest.TestCase):
 
 class TestRunUpdate(unittest.TestCase):
     infile_name = 'test_data/old_version_single_res.cool'
-    outfile_name = 'test_data/new_version_single_res.cool'
+    outfile_name = 'test_data/OUT_new_version_single_res.cool'
 
     def norm_convert(self, val):
         if val != 0.0:
@@ -318,8 +328,10 @@ class TestRunUpdate(unittest.TestCase):
     def test_run_update(self):
         """
         Test to ensure the update functionality works and changes generated
-        by tags. This specific update will re-invert normalization vectors,
-        so ensure that also works.
+        by tags.
+
+        Specifically test updates for re-inverting normalization vectors and
+        adding format-version and storage-mode attributes.
         """
         # first check some stuff on the input file, which is single-res
         original_kr_data = []  # first 10 values in KR normalization
@@ -329,6 +341,8 @@ class TestRunUpdate(unittest.TestCase):
         with h5py.File(self.infile_name, 'r') as h5file:
             self.assertEqual(h5file.attrs.get('generated-by'), 'hic2cool-0.4.2')
             self.assertEqual(h5file.attrs.get('update-date'), None)
+            self.assertEqual(h5file.attrs.get('format-version'), None)
+            self.assertEqual(h5file.attrs.get('storage-mode'), None)
             original_creation_date = h5file.attrs.get('creation-date')
             original_kr_data = h5file['bins/KR'][:100]
         hic2cool_update(self.infile_name, self.outfile_name, silent=True)
@@ -339,6 +353,8 @@ class TestRunUpdate(unittest.TestCase):
             self.assertEqual(h5file.attrs.get('generated-by'), expected_version)
             self.assertEqual(h5file.attrs.get('creation-date'), original_creation_date)
             self.assertTrue(h5file.attrs.get('update-date') is not None)
+            self.assertTrue(isinstance(h5file.attrs.get('format-version'), np.int64))
+            self.assertEqual(h5file.attrs.get('storage-mode'), 'symmetric-upper')
             update_date = h5file.attrs.get('update-date')
             final_kr_data = h5file['bins/KR'][:100]
         # make sure the norms got updated correctly
