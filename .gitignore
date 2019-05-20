@@ -90,3 +90,6 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+# Data written by tests
+test_data/OUT_*
