@@ -40,6 +40,7 @@ except NameError:
 # Cooler metadata
 MAGIC = "HDF5::Cooler"
 URL = "https://github.com/4dn-dcic/hic2cool"
+COOLER_SCHEMA_VERSION = 3
 CHROM_DTYPE = np.dtype('S32')
 CHROMID_DTYPE = np.int32
 CHROMSIZE_DTYPE = np.int32
@@ -373,12 +374,16 @@ def build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices):
     return np.concatenate(block_results, axis=0)
 
 
-def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resolution, norm_info, multi_res, show_warnings):
+def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata,
+                   resolution, norm_info, multi_res, show_warnings):
     """
     Use various information to initialize a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
     For an in-depth explanation of the data structure, please see:
     http://cooler.readthedocs.io/en/latest/datamodel.html
+
+    ONGOING: Keep schema attributes and SCHEMA_VERSION up-to-date with:
+    https://cooler.readthedocs.io/en/latest/schema.html
     """
     with h5py.File(outfile, "a") as h5file:
         # if multi_res, organize resolutions as individual cooler files
@@ -406,6 +411,7 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resoluti
         # pixels (written later)
         grp = h5resolution.create_group('pixels')
         initialize_pixels(grp, n_bins)
+        # metadata required by cooler schema
         # w.r.t. metadata, each resolution is considered a full file
         info = copy.deepcopy(metadata) # initialize with metadata from header
         info['nchroms'] = len(chr_names)
@@ -414,6 +420,8 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata, resoluti
         info['bin-size'] = resolution
         info['format'] = MAGIC
         info['format-url'] = URL
+        info['format-version'] = COOLER_SCHEMA_VERSION
+        info['storage-mode'] = 'symmetric-upper'
         info['generated-by'] = 'hic2cool-' + __version__
         info['genome-assembly'] = genome
         # in utc
@@ -765,6 +773,20 @@ def update_invert_weights(writefile):
     Invert all the weights from each resolution (if a mult-res file) or the
     top level (if a single-res file)
     """
+    # helper fxn
+    def update_invert_weight_for_resolution(h5_data, res=None):
+        """
+        Access the bins table, find the weights, and invert
+        """
+        found_weights = [val for val in h5_data if val not in ['chrom', 'start', 'end']]
+        for weight in found_weights:
+            h5_weight = h5_data[weight][:]
+            h5_data[weight][:] = list(map(norm_convert, h5_weight))
+        if res:
+            print('... For resolution %s, inverted following weights: %s' % (res, found_weights))
+        else:
+            print('... Inverted following weights: %s' % found_weights)
+
     with h5py.File(writefile) as h5_file:
         if 'resolutions' in h5_file:
             for res in h5_file['resolutions']:
@@ -773,18 +795,28 @@ def update_invert_weights(writefile):
             update_invert_weight_for_resolution(h5_file['bins'])
 
 
-def update_invert_weight_for_resolution(h5_data, res=None):
+def update_schema_v3(writefile):
     """
-    Access the bins table, find the weights, and invert
+    Add format-version and storage-mode attributes to given cooler
     """
-    found_weights = [val for val in h5_data if val not in ['chrom', 'start', 'end']]
-    for weight in found_weights:
-        h5_weight = h5_data[weight][:]
-        h5_data[weight][:] = list(map(norm_convert, h5_weight))
-    if res:
-        print('... For resolution %s, inverted following weights: %s' % (res, found_weights))
-    else:
-        print('... Inverted following weights: %s' % found_weights)
+    # helper fxn
+    def add_v3_attrs(h5_data, res=None):
+        info = {
+            'format-version': COOLER_SCHEMA_VERSION,
+            'storage-mode': 'symmetric-upper'
+        }
+        h5_data.attrs.update(info)
+        if res:
+            print('... For resolution %s, added format-version and storage-mode attributes' % res)
+        else:
+            print('... Added format-version and storage-mode attributes')
+
+    with h5py.File(writefile) as h5_file:
+        if 'resolutions' in h5_file:
+            for res in h5_file['resolutions']:
+                add_v3_attrs(h5_file['resolutions'][res], res=res)
+        else:
+            add_v3_attrs(h5_file)
 
 
 def prepare_hic2cool_update(version_nums):
@@ -802,6 +834,16 @@ def prepare_hic2cool_update(version_nums):
                 'effect': 'Invert cooler weights so that they match original hic normalization values',
                 'detail': 'cooler uses multiplicative weights and hic uses divisive weights. Before version 0.5.0, hic2cool inverted normalization vectors for consistency with cooler behavior, but now that is no longer done for consistency with 4DN analysis pipelines.',
                 'function': update_invert_weights
+            }
+        )
+    # import cooler attributes added in version 0.6.0
+    if version_nums[0] == 0 and version_nums[1] < 6:
+        updates.append(
+            {
+                'title': 'Add cooler schema version',
+                'effect': 'Add a couple important cooler schema attributes',
+                'detail': 'Adds format-version and storage-mode attributes to hdf5 for compatibility with cooler schema v3.',
+                'function': update_schema_v3
             }
         )
     return updates

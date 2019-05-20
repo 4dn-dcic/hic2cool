@@ -125,6 +125,9 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 ## Changelog
 
+### 0.6.0
+* Added `format-version` and `storage-type` to attributes of output cooler to get up-to-date with cooler schema v3
+* Run `hic2cool update` to add these attributes to files generated with previous hic2cool versions
 ### 0.5.1
 Fixed packaging issue by adding MANIFEST.in and made some documentation/pypi edits
 ### 0.5.0
