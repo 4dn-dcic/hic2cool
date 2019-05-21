@@ -32,10 +32,11 @@ from datetime import datetime
 from collections import OrderedDict
 from ._version import __version__
 
+# input vs. raw_input for python 2/3
 try:
-    use_input = input
-except NameError:
     use_input = raw_input
+except NameError:
+    use_input = input
 
 # Cooler metadata
 MAGIC = "HDF5::Cooler"
