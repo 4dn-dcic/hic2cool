@@ -124,8 +124,8 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 
 ## Changelog
-### 0.6.2 / 0.6.3
-* Fixed issues when downloading hic2cool from pypi with python 2
+### 0.7.0
+* Fixed package issues associated with python 2
 ### 0.6.1
 * Fixed input issue with `hic2cool update` when using python 2
 ### 0.6.0

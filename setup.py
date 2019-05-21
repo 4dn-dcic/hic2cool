@@ -13,9 +13,14 @@ this_directory = path.abspath(path.dirname(__file__))
 with io.open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-with io.open(path.join(this_directory, 'requirements.txt')) as f:
-    requires = f.read().splitlines()
-requires = [req.strip() for req in requires]
+# dependencies must be handled carefully for py2 and py3 compatibility
+# specifically, scipy==1.3.0
+requires = [
+    'h5py>=2.8.0',
+    'numpy>=1.10.1,<=1.16.3',
+    'scipy<=1.2.1',
+    'cooler>=0.8.5'
+]
 
 this_version = io.open(path.join(this_directory, "hic2cool/_version.py")).readlines()[-1].split()[-1].strip("\"'")
 
