@@ -14,7 +14,12 @@ https://github.com/mirnylab/cooler.
 
 See README for more information
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import (
+    absolute_import,
+    division,
+    print_function,
+    unicode_literals
+)
 import sys
 import time
 import struct
@@ -875,15 +880,17 @@ def run_hic2cool_updates(updates, infile, writefile):
         upd['function'](writefile)
         print('... Finished: %s' % upd['title'])
     # now update the generated-by attribute for the file
+    generated_by = 'hic2cool-' + __version__
+    update_data = datetime.now().isoformat()
     with h5py.File(writefile, 'r+') as h5_file:
         if 'resolutions' in h5_file:
             for res in h5_file['resolutions']:
-                h5_file['resolutions'][res].attrs['generated-by'] = 'hic2cool-' + __version__
-                h5_file['resolutions'][res].attrs['update-date'] = datetime.now().isoformat()
+                h5_file['resolutions'][res].attrs['generated-by'] = generated_by
+                h5_file['resolutions'][res].attrs['update-date'] = update_data
                 print('... Updated metadata for resolution %s' % res)
         else:
-            h5_file.attrs['generated-by'] = 'hic2cool-' + __version__
-            h5_file.attrs['update-date'] = datetime.now().isoformat()
+            h5_file.attrs['generated-by'] = generated_by
+            h5_file.attrs['update-date'] = update_data
             print('... Updated metadata')
     print('### Finished! Output written to: %s' % writefile)
 
