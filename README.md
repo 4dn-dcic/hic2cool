@@ -126,6 +126,7 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 ## Changelog
 ### 0.7.0
 * Fixed package issues associated with python 2
+* Fixed issue where some cooler metadata was written as non-unicode when using python 2
 ### 0.6.1
 * Fixed input issue with `hic2cool update` when using python 2
 ### 0.6.0
