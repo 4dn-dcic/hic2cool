@@ -124,6 +124,10 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 
 ## Changelog
+### 0.7.1
+* Add `format` and `format-version` to `/` collection for multi-resolution coolers written by hic2cool
+* Run `hic2cool_update` to add these attributes to mcool files generated with previous hic2cool versions
+* Fixed issue where datetime-derived metadata was written as bytestring when using python 2
 ### 0.7.0
 * Fixed package issues associated with python 2
 * Fixed issue where some cooler metadata was written as non-unicode when using python 2
