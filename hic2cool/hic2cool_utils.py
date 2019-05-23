@@ -36,29 +36,14 @@ import pandas as pd
 from datetime import datetime
 from collections import OrderedDict
 from ._version import __version__
+from .hic2cool_updates import prepare_hic2cool_updates
+from .hic2cool_config import *
 
 # input vs. raw_input for python 2/3
 try:
     use_input = raw_input
 except NameError:
     use_input = input
-
-# Cooler metadata
-MAGIC = "HDF5::Cooler"
-URL = "https://github.com/4dn-dcic/hic2cool"
-COOLER_SCHEMA_VERSION = 3
-CHROM_DTYPE = np.dtype('S32')
-CHROMID_DTYPE = np.int32
-CHROMSIZE_DTYPE = np.int32
-COORD_DTYPE = np.int32
-BIN_DTYPE = np.int64
-COUNT_DTYPE = np.int32
-CHROMOFFSET_DTYPE = np.int64
-BIN1OFFSET_DTYPE = np.int64
-NORM_DTYPE = np.float64
-PIXEL_FIELDS = ('bin1_id', 'bin2_id', 'count')
-CHUNK_DTYPE = {'names':['bin1_id','bin2_id','count'], 'formats':[BIN_DTYPE, BIN_DTYPE, COUNT_DTYPE]}
-H5OPTS = {'compression': 'gzip', 'compression_opts': 6, 'shuffle': True}
 
 
 # read function
@@ -399,7 +384,14 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata,
             if 'resolutions' in h5file:
                 h5res_grp = h5file['resolutions']
             else:
+                # Add "/" level mcool attributes and initialize the resolutions
+                mcool_info = {
+                    'format': MCOOL_FORMAT,
+                    'format-version': MCOOL_FORMAT_VERSION
+                }
+                h5file.attrs.update(mcool_info)
                 h5res_grp = h5file.create_group('resolutions')
+
             h5resolution = h5res_grp.create_group(str(resolution))
         else:
             h5resolution = h5file
@@ -419,19 +411,19 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata,
         initialize_pixels(grp, n_bins)
         # metadata required by cooler schema
         # w.r.t. metadata, each resolution is considered a full file
+        # these should be in unicode
         info = copy.deepcopy(metadata) # initialize with metadata from header
         info['nchroms'] = len(chr_names)
         info['nbins'] = n_bins
         info['bin-type'] = 'fixed'
         info['bin-size'] = resolution
-        info['format'] = MAGIC
+        info['format'] = COOLER_FORMAT
         info['format-url'] = URL
-        info['format-version'] = COOLER_SCHEMA_VERSION
+        info['format-version'] = COOLER_FORMAT_VERSION
         info['storage-mode'] = 'symmetric-upper'
         info['generated-by'] = 'hic2cool-' + __version__
         info['genome-assembly'] = genome
-        # in utc
-        info['creation-date'] = datetime.utcnow().isoformat()
+        info['creation-date'] = get_unicode_utcnow()
         h5resolution.attrs.update(info)
     return by_chr_offset_map, by_chr_bins
 
@@ -550,7 +542,8 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, s
             # norm vectors to be longer than n_bins for a given chr
             # restrict the length of norm_vector to chr_bin_end for now.
             norm_data.extend(norm_vector[:chr_bin_end])
-            # we are no longer performing the inversion of hic weights
+            # we are no longer performing the inversion of hic weights, i.e.
+            # from .hic2cool_updates import norm_convert
             # norm_data.extend(list(map(norm_convert, norm_vector[:chr_bin_end])))
         if len(norm_data) != n_bins:
             error_str = (
@@ -563,22 +556,6 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, s
             dtype=NORM_DTYPE,
             data=np.array(norm_data, dtype=NORM_DTYPE),
             **H5OPTS)
-
-
-def norm_convert(val):
-    """
-    hic2cool now just uses hic normalization vectors as-is,
-    without attempting to invert them to match cooler convention. This function
-    is now only used with `hic2cool update` to revert cooler weights to their
-    original hic values.
-
-    Simply invert norm vectors, since hic norms are divisive and cooler
-    weights are multiplicative.
-    """
-    if val != 0.0:
-        return 1 / val
-    else:
-        return np.nan
 
 
 def write_chrom_offset(grp, chr_offsets):
@@ -739,6 +716,16 @@ def rlencode(array, chunksize=None):
     return starts, lengths, values
 
 
+def get_unicode_utcnow():
+    """
+    datetime.utcnow().isoformat() will return bytestring with python 2
+    """
+    date_str = datetime.utcnow().isoformat()
+    if not isinstance(date_str, type(u'')):
+        return date_str.decode('utf-8')
+    return date_str
+
+
 def write_zooms_for_higlass(h5res):
     """
     NOT CURRENTLY USED
@@ -774,91 +761,10 @@ def write_zooms_for_higlass(h5res):
         h5res[str(i)] = h5py.SoftLink('/resolutions/{}'.format(res))
 
 
-def update_invert_weights(writefile):
-    """
-    Invert all the weights from each resolution (if a mult-res file) or the
-    top level (if a single-res file)
-    """
-    # helper fxn
-    def update_invert_weight_for_resolution(h5_data, res=None):
-        """
-        Access the bins table, find the weights, and invert
-        """
-        found_weights = [val for val in h5_data if val not in ['chrom', 'start', 'end']]
-        for weight in found_weights:
-            h5_weight = h5_data[weight][:]
-            h5_data[weight][:] = list(map(norm_convert, h5_weight))
-        if res:
-            print('... For resolution %s, inverted following weights: %s' % (res, found_weights))
-        else:
-            print('... Inverted following weights: %s' % found_weights)
-
-    with h5py.File(writefile) as h5_file:
-        if 'resolutions' in h5_file:
-            for res in h5_file['resolutions']:
-                update_invert_weight_for_resolution(h5_file['resolutions'][res]['bins'], res=res)
-        else:
-            update_invert_weight_for_resolution(h5_file['bins'])
-
-
-def update_schema_v3(writefile):
-    """
-    Add format-version and storage-mode attributes to given cooler
-    """
-    # helper fxn
-    def add_v3_attrs(h5_data, res=None):
-        info = {
-            'format-version': COOLER_SCHEMA_VERSION,
-            'storage-mode': 'symmetric-upper'
-        }
-        h5_data.attrs.update(info)
-        if res:
-            print('... For resolution %s, added format-version and storage-mode attributes' % res)
-        else:
-            print('... Added format-version and storage-mode attributes')
-
-    with h5py.File(writefile) as h5_file:
-        if 'resolutions' in h5_file:
-            for res in h5_file['resolutions']:
-                add_v3_attrs(h5_file['resolutions'][res], res=res)
-        else:
-            add_v3_attrs(h5_file)
-
-
-def prepare_hic2cool_update(version_nums):
-    """
-    Find what must be done when actually running `hic2cool update`
-    Determines what updates are necessary based off of version numbers
-    Version numbers is a list of ints in form: [major, minor, release]
-    """
-    updates = []
-    # normalization vectors were inverted before version 0.5.0
-    if version_nums[0] == 0 and version_nums[1] < 5:
-        updates.append(
-            {
-                'title': 'Invert weights',
-                'effect': 'Invert cooler weights so that they match original hic normalization values',
-                'detail': 'cooler uses multiplicative weights and hic uses divisive weights. Before version 0.5.0, hic2cool inverted normalization vectors for consistency with cooler behavior, but now that is no longer done for consistency with 4DN analysis pipelines.',
-                'function': update_invert_weights
-            }
-        )
-    # import cooler attributes added in version 0.6.0
-    if version_nums[0] == 0 and version_nums[1] < 6:
-        updates.append(
-            {
-                'title': 'Add cooler schema version',
-                'effect': 'Add a couple important cooler schema attributes',
-                'detail': 'Adds format-version and storage-mode attributes to hdf5 for compatibility with cooler schema v3.',
-                'function': update_schema_v3
-            }
-        )
-    return updates
-
-
 def print_formatted_updates(updates, writefile):
     """
     Simple function to display updates for the user to confirm
-    Updates are populated using prepare_hic2cool_update
+    Updates are populated using prepare_hic2cool_updates
     """
     print('### Updates found. Will upgrade hic2cool file to version %s' % __version__)
     print('### This is what will change:')
@@ -879,9 +785,9 @@ def run_hic2cool_updates(updates, infile, writefile):
         print('... Running: %s' % upd['title'])
         upd['function'](writefile)
         print('... Finished: %s' % upd['title'])
-    # now update the generated-by attribute for the file
+    # now update the generated-by attr and add update-d
     generated_by = 'hic2cool-' + __version__
-    update_data = datetime.now().isoformat()
+    update_data = get_unicode_utcnow()
     with h5py.File(writefile, 'r+') as h5_file:
         if 'resolutions' in h5_file:
             for res in h5_file['resolutions']:
@@ -1200,7 +1106,7 @@ def hic2cool_update(infile, outfile='', show_warnings=False, silent=False):
         print('... Found version: %s' % h2c_version[9:])
         print('... Target version: %s' % __version__)
     writefile = outfile if outfile else infile
-    updates = prepare_hic2cool_update(version_nums)
+    updates = prepare_hic2cool_updates(version_nums)
     if not updates:
         print('### No updates found!\n... Exiting')
         return

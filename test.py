@@ -180,9 +180,10 @@ class TestWithCooler(unittest.TestCase):
             cool_file = cool.filename.encode('utf-8')
             self.assertEqual(self.outfile_name.encode('utf-8'), cool_file)
             self.assertEqual(len(cool.info), 12)
-            self.assertTrue(__version__ in cool.info['generated-by'])
+            self.assertEqual(cool.info['format'], 'HDF5::Cooler')
             self.assertTrue(isinstance(cool.info['format-version'], np.int64))
             self.assertEqual(cool.info['storage-mode'], 'symmetric-upper')
+            self.assertTrue(__version__ in cool.info['generated-by'])
             self.assertEqual(cool.info['nchroms'], 25)
             self.assertEqual(len(cool.chromnames), 25) # 'all' excluded
             self.assertEqual(self.binsize, cool.info['bin-size'])
@@ -231,8 +232,10 @@ class TestWithCooler(unittest.TestCase):
             cool = cooler.Cooler(h5file)
             cool_file = cool.filename.encode('utf-8')
             self.assertEqual(self.outfile_name2.encode('utf-8'), cool_file)
-            # cooler info has 8 entries
             self.assertEqual(len(cool.info), 12)
+            self.assertEqual(cool.info['format'], 'HDF5::Cooler')
+            self.assertTrue(isinstance(cool.info['format-version'], np.int64))
+            self.assertEqual(cool.info['storage-mode'], 'symmetric-upper')
             self.assertTrue(__version__ in cool.info['generated-by'])
             self.assertEqual(len(cool.chromnames), 25)
             self.assertEqual(self.binsize2, cool.info['bin-size'])
@@ -270,6 +273,9 @@ class TestWithCooler(unittest.TestCase):
 
     def test_cooler_multi_res(self):
         with h5py.File(self.outfile_name_all, 'r') as h5file:
+            # there should be some mcool attributes on the base collection
+            self.assertEqual(h5file.attrs['format'], 'HDF5::MCOOL')
+            self.assertTrue(isinstance(h5file.attrs['format-version'], np.int64))
             # since this is multi-res, hdf5 structure is different
             # expect the following 9 resultions to be present:
             # [2500000, 1000000, 500000, 250000, 100000, 50000, 25000, 10000, 5000]
@@ -281,6 +287,9 @@ class TestWithCooler(unittest.TestCase):
             self.assertEqual(self.outfile_name_all.encode('utf-8'), cool_file)
             # cooler info has 8 entries
             self.assertEqual(len(cool.info), 12)
+            self.assertEqual(cool.info['format'], 'HDF5::Cooler')
+            self.assertTrue(isinstance(cool.info['format-version'], np.int64))
+            self.assertEqual(cool.info['storage-mode'], 'symmetric-upper')
             self.assertTrue(__version__ in cool.info['generated-by'])
             self.assertEqual(len(cool.chromnames), 25)
             self.assertEqual(250000, cool.info['bin-size'])
@@ -316,8 +325,10 @@ class TestWithCooler(unittest.TestCase):
 
 
 class TestRunUpdate(unittest.TestCase):
-    infile_name = 'test_data/old_version_single_res.cool'
+    infile_name = 'test_data/hic2cool_0.4.2_single_res.cool'
     outfile_name = 'test_data/OUT_new_version_single_res.cool'
+    infile_mcool_name = 'test_data/hic2cool_0.7.0_multi_res.mcool'
+    outfile_mcool_name = 'test_data/OUT_new_version_multi_res.cool'
 
     def norm_convert(self, val):
         if val != 0.0:
@@ -325,7 +336,7 @@ class TestRunUpdate(unittest.TestCase):
         else:
             return np.nan
 
-    def test_run_update(self):
+    def test_run_update_cooler(self):
         """
         Test to ensure the update functionality works and changes generated
         by tags.
@@ -369,6 +380,18 @@ class TestRunUpdate(unittest.TestCase):
         with h5py.File(self.outfile_name, 'r') as h5file:
             self.assertEqual(h5file.attrs.get('generated-by'), expected_version)
             self.assertEqual(h5file.attrs.get('update-date'), update_date)
+
+    def test_run_update_mcool(self):
+        """
+        Test updates run exclusively on multi-res files
+        """
+        with h5py.File(self.infile_mcool_name, 'r') as h5file:
+            self.assertTrue('format' not in h5file.attrs)
+            self.assertTrue('format-version' not in h5file.attrs)
+        hic2cool_update(self.infile_mcool_name, self.outfile_mcool_name, silent=True)
+        with h5py.File(self.outfile_mcool_name, 'r') as h5file:
+            self.assertEqual(h5file.attrs['format'], 'HDF5::MCOOL')
+            self.assertTrue(isinstance(h5file.attrs['format-version'], np.int64))
 
 
 class TestUtilities(unittest.TestCase):
