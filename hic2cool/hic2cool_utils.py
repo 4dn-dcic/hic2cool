@@ -308,8 +308,8 @@ def read_normalization_vector(f, buf, entry):
     return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
 
 
-def parse_hic(req, buf, outfile, chr_key, unit, binsize,
-              pair_footer_info, chr_offset_map, chr_bins, show_warnings):
+def parse_hic(req, buf, outfile, chr_key, unit, binsize, pair_footer_info,
+              chr_offset_map, chr_bins, used_chrs, show_warnings):
     """
     Adapted from the straw() function in the original straw package.
     Mainly, since all chroms are iterated over, the read_header and read_footer
@@ -332,8 +332,10 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize,
     except KeyError:
         WARN = True
         if show_warnings:
-            print_stderr('... The intersection between chr %s and chr %s cannot be found in the hic file.'
-                  % (c1, c2))
+            c1_name = used_chrs[c1][1]
+            c2_name = used_chrs[c2][1]
+            print_stderr('... The intersection between %s and %s cannot be found in the hic file.'
+                         % (c1_name, c2_name))
         return join_chunk
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
@@ -900,9 +902,9 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
                 # and c2-c1 reciprocally
                 if chr_key in covered_chr_pairs:
                     continue
-                tmp_chunk = parse_hic(req, buf, outfile, chr_key,
-                          unit, binsize, pair_footer_info,
-                          chr_offset_map, chr_bins, show_warnings)
+                tmp_chunk = parse_hic(req, buf, outfile, chr_key, unit, binsize,
+                                      pair_footer_info, chr_offset_map, chr_bins,
+                                      used_chrs, show_warnings)
                 total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
                 del tmp_chunk
                 covered_chr_pairs.append(chr_key)

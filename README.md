@@ -124,6 +124,8 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 
 ## Changelog
+### 0.7.2
+* Warning from `parse_hic` will now output chromsome names, not indexes
 ### 0.7.1
 * Add `format` and `format-version` to `/` collection for multi-resolution coolers written by hic2cool
 * Run `hic2cool_update` to add these attributes to mcool files generated with previous hic2cool versions
