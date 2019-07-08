@@ -8,7 +8,9 @@ The hic parsing code is based off the [straw project](https://github.com/theaide
 
 ## Important
 
-If you converted a hic file using a version of hic2cool lower than 0.5.0, please update your cooler file with the [new update function](#updating-hic2cool-coolers).
+* hic2cool currently supports Python 2.7 and Python 3.x. **Support for Python 2 will end upon its end of life on January 1st, 2020.** Visit [the official countdown clock](https://pythonclock.org/) for more information.
+
+* If you converted a hic file using a version of hic2cool lower than 0.5.0, please update your cooler file with the [new update function](#updating-hic2cool-coolers).
 
 ## Using the Python package
 ```
@@ -124,6 +126,8 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 
 ## Changelog
+### 0.7.3
+* Pinned `pandas==0.24.2` since newer versions deprecate python 2
 ### 0.7.2
 * Warning from `hic2cool_utils.parse_hic` will now output chromsome names, not indices
 ### 0.7.1
