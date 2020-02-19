@@ -38,6 +38,7 @@ from collections import OrderedDict
 from ._version import __version__
 from .hic2cool_updates import prepare_hic2cool_updates
 from .hic2cool_config import *
+from multiprocessing import Pool
 
 # input vs. raw_input for python 2/3
 try:
@@ -308,7 +309,7 @@ def read_normalization_vector(f, buf, entry):
     return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
 
 
-def parse_hic(req, buf, outfile, chr_key, unit, binsize, pair_footer_info,
+def parse_hic(infile, chr_key, unit, binsize, pair_footer_info,
               chr_offset_map, chr_bins, used_chrs, show_warnings):
     """
     Adapted from the straw() function in the original straw package.
@@ -319,28 +320,30 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize, pair_footer_info,
     generously provided by Nezar. Reads are buffered using mmap and a lot of
     functions were condensed
     """
-    # join chunk is an np array
-    # that will contain the entire list of c1/c2 counts
-    join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
-    if unit not in ["BP", "FRAG"]:
-        error_string = "!!! ERROR. Unit specified incorrectly, must be one of <BP/FRAG>"
-        force_exit(error_string, req)
-    c1 = int(chr_key.split('_')[0])
-    c2 = int(chr_key.split('_')[1])
-    try:
-        pair_footer_info[chr_key]
-    except KeyError:
-        WARN = True
-        if show_warnings:
-            c1_name = used_chrs[c1][1]
-            c2_name = used_chrs[c2][1]
-            print_stderr('... The intersection between %s and %s cannot be found in the hic file.'
-                         % (c1_name, c2_name))
-        return join_chunk
-    region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
-    myFilePos = pair_footer_info[chr_key]
-    block_info, block_bins, block_cols = read_blockinfo(req, buf, myFilePos, unit, binsize)
-    return build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices)
+    global mmap_buf
+    with open(infile, 'rb') as req:
+        # join chunk is an np array
+        # that will contain the entire list of c1/c2 counts
+        join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
+        if unit not in ["BP", "FRAG"]:
+            error_string = "!!! ERROR. Unit specified incorrectly, must be one of <BP/FRAG>"
+            force_exit(error_string, req)
+        c1 = int(chr_key.split('_')[0])
+        c2 = int(chr_key.split('_')[1])
+        try:
+            pair_footer_info[chr_key]
+        except KeyError:
+            WARN = True
+            if show_warnings:
+                c1_name = used_chrs[c1][1]
+                c2_name = used_chrs[c2][1]
+                print_stderr('... The intersection between %s and %s cannot be found in the hic file.'
+                             % (c1_name, c2_name))
+            return join_chunk
+        region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
+        myFilePos = pair_footer_info[chr_key]
+        block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
+        return build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices)
 
 
 def build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices):
@@ -803,7 +806,7 @@ def run_hic2cool_updates(updates, infile, writefile):
     print('### Finished! Output written to: %s' % writefile)
 
 
-def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=False):
+def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=False, nproc=1):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -816,6 +819,7 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
                 Final .cool structure will change depending on this param (see README)
     <show_warnings> bool. If True, print out WARNING messages
     <silent> bool. If true, hide standard output
+    <nproc> number of processes to use
     """
     unit = 'BP'  # only using base pair unit for now
     resolution = int(resolution)
@@ -825,9 +829,10 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
     global WARN
     WARN = False
     req = open(infile, 'rb')
-    buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
+    global mmap_buf
+    mmap_buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
     used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
-    pair_footer_info, expected, factors, norm_info = read_footer(req, buf, masteridx)
+    pair_footer_info, expected, factors, norm_info = read_footer(req, mmap_buf, masteridx)
     # expected/factors unused for now
     del expected
     del factors
@@ -882,16 +887,18 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
             print_stderr('!!! WARNING: removed pre-existing file: %s' % (outfile))
 
     print('### Converting')
+    pool = Pool(processes=nproc)
     for binsize in use_resolutions:
         t_start = time.time()
         # initialize cooler file. return per resolution bin offset maps
-        chr_offset_map, chr_bins = initialize_res(outfile, req, buf, unit, used_chrs,
+        chr_offset_map, chr_bins = initialize_res(outfile, req, mmap_buf, unit, used_chrs,
                                         genome, metadata, binsize, norm_info, multi_res, show_warnings)
         covered_chr_pairs = []
         for chr_a in used_chrs:
             total_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
             if used_chrs[chr_a][1].lower() == 'all':
                 continue
+            mp_result = dict()
             for chr_b in used_chrs:
                 if used_chrs[chr_b][1].lower() == 'all':
                     continue
@@ -902,12 +909,19 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
                 # and c2-c1 reciprocally
                 if chr_key in covered_chr_pairs:
                     continue
-                tmp_chunk = parse_hic(req, buf, outfile, chr_key, unit, binsize,
-                                      pair_footer_info, chr_offset_map, chr_bins,
-                                      used_chrs, show_warnings)
-                total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
-                del tmp_chunk
-                covered_chr_pairs.append(chr_key)
+                mp_result[chr_b] = pool.apply_async(parse_hic, (infile, chr_key, unit, binsize,
+                                                                pair_footer_info, chr_offset_map, chr_bins,
+                                                                used_chrs, show_warnings,))
+            for chr_b in used_chrs:
+                if chr_b in mp_result:
+                    mp_result[chr_b].wait()
+                    tmp_chunk = mp_result[chr_b].get()
+                #tmp_chunk = parse_hic(req, mmap_buf, outfile, chr_key, unit, binsize,
+                #                      pair_footer_info, chr_offset_map, chr_bins,
+                #                      used_chrs, show_warnings)
+                    total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
+                    del tmp_chunk
+                    covered_chr_pairs.append(chr_key)
             # write at the end of every chr_a
             write_pixels_chunk(outfile, binsize, total_chunk, multi_res)
             del total_chunk
@@ -918,6 +932,7 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
         if not silent:
             print('... Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
+
     if not silent:
         if WARN and not show_warnings:
             print('... Warnings were found in this run. Run with -v to display them.')
