@@ -309,7 +309,7 @@ def read_normalization_vector(f, buf, entry):
     return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
 
 
-def parse_hic(infile, chr_key, unit, binsize, pair_footer_info,
+def parse_hic(req, pool, chr_key, unit, binsize, pair_footer_info,
               chr_offset_map, chr_bins, used_chrs, show_warnings):
     """
     Adapted from the straw() function in the original straw package.
@@ -321,53 +321,66 @@ def parse_hic(infile, chr_key, unit, binsize, pair_footer_info,
     functions were condensed
     """
     global mmap_buf
-    with open(infile, 'rb') as req:
-        # join chunk is an np array
-        # that will contain the entire list of c1/c2 counts
-        join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
-        if unit not in ["BP", "FRAG"]:
-            error_string = "!!! ERROR. Unit specified incorrectly, must be one of <BP/FRAG>"
-            force_exit(error_string, req)
-        c1 = int(chr_key.split('_')[0])
-        c2 = int(chr_key.split('_')[1])
-        try:
-            pair_footer_info[chr_key]
-        except KeyError:
-            WARN = True
-            if show_warnings:
-                c1_name = used_chrs[c1][1]
-                c2_name = used_chrs[c2][1]
-                print_stderr('... The intersection between %s and %s cannot be found in the hic file.'
-                             % (c1_name, c2_name))
-            return join_chunk
-        region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
-        myFilePos = pair_footer_info[chr_key]
-        block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
-        return build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices)
+    # join chunk is an np array
+    # that will contain the entire list of c1/c2 counts
+    join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
+    if unit not in ["BP", "FRAG"]:
+        error_string = "!!! ERROR. Unit specified incorrectly, must be one of <BP/FRAG>"
+        force_exit(error_string, req)
+    c1 = int(chr_key.split('_')[0])
+    c2 = int(chr_key.split('_')[1])
+    try:
+        pair_footer_info[chr_key]
+    except KeyError:
+        WARN = True
+        if show_warnings:
+            c1_name = used_chrs[c1][1]
+            c2_name = used_chrs[c2][1]
+            print_stderr('... The intersection between %s and %s cannot be found in the hic file.'
+                         % (c1_name, c2_name))
+        return join_chunk
+    region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
+    myFilePos = pair_footer_info[chr_key]
+    block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
+    return build_counts_chunk(pool, c1, c2, block_info, chr_offset_map, region_indices)
 
 
-def build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices):
+def build_counts_chunk(pool, c1, c2, block_info, chr_offset_map, region_indices):
     """
     Takes the given block_info and find those bin_IDs/counts from the hic file,
     using them to build and return a chunk of counts
     """
     [binX0, binX1, binY0, binY1] = region_indices
     block_results = []
+    mpi_results = []
+    mpi = 0
     for block_record in block_info:
-        records = read_block(req, block_record)
-        # skip empty records
-        if not records.size:
+        mpi_results.append(pool.apply_async(read_block_record, (mpi, block_record, c1, c2, chr_offset_map,
+                                                                binX0, binX1, binY0, binY1,)))
+        mpi += 1
+    for result in mpi_results:
+        result.wait()
+        if result.get() is None:
             continue
-        mask = ((records['bin1_id'] >= binX0) &
-                (records['bin1_id'] < binX1) &
-                (records['bin2_id'] >= binY0) &
-                (records['bin2_id'] < binY1))
-        records = records[mask]
-        # add chr offsets
-        records['bin1_id'] += chr_offset_map[c1]
-        records['bin2_id'] += chr_offset_map[c2]
-        block_results.append(records)
+        block_results.append(result.get())
     return np.concatenate(block_results, axis=0)
+
+
+def read_block_record(mpi, block_record, c1, c2, chr_offset_map, binX0, binX1, binY0, binY1):
+    req = reqarr[mpi]
+    records = read_block(req, block_record)
+    # skip empty records
+    if not records.size:
+        return
+    mask = ((records['bin1_id'] >= binX0) &
+            (records['bin1_id'] < binX1) &
+            (records['bin2_id'] >= binY0) &
+            (records['bin2_id'] < binY1))
+    records = records[mask]
+    # add chr offsets
+    records['bin1_id'] += chr_offset_map[c1]
+    records['bin2_id'] += chr_offset_map[c2]
+    return records
 
 
 def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata,
@@ -829,6 +842,10 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
     global WARN
     WARN = False
     req = open(infile, 'rb')
+    global reqarr
+    reqarr = []
+    for i in range(0, 1000):
+        reqarr.append(open(infile, 'rb'))
     global mmap_buf
     mmap_buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
     used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
@@ -898,7 +915,6 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
             total_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
             if used_chrs[chr_a][1].lower() == 'all':
                 continue
-            mp_result = dict()
             for chr_b in used_chrs:
                 if used_chrs[chr_b][1].lower() == 'all':
                     continue
@@ -909,24 +925,12 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
                 # and c2-c1 reciprocally
                 if chr_key in covered_chr_pairs:
                     continue
-                #mp_result[chr_b] = parse_hic(infile, chr_key, unit, binsize,
-                #                             pair_footer_info, chr_offset_map, chr_bins,
-                #                             used_chrs, show_warnings)
-                mp_result[chr_b] = pool.apply_async(parse_hic, (infile, chr_key, unit, binsize,
-                                                                pair_footer_info, chr_offset_map, chr_bins,
-                                                                used_chrs, show_warnings,))
+                tmp_chunk = parse_hic(req, pool, chr_key, unit, binsize,
+                                      pair_footer_info, chr_offset_map, chr_bins,
+                                      used_chrs, show_warnings)
+                total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
+                del tmp_chunk
                 covered_chr_pairs.append(chr_key)
-            for chr_b in used_chrs:
-                if chr_b in mp_result:
-                    mp_result[chr_b].wait()
-                    #tmp_chunk = mp_result[chr_b]
-                    #tmp_chunk = mp_result[chr_b].get()
-                #tmp_chunk = parse_hic(infile, chr_key, unit, binsize,
-                #tmp_chunk = parse_hic(req, mmap_buf, outfile, chr_key, unit, binsize,
-                #                      pair_footer_info, chr_offset_map, chr_bins,
-                #                      used_chrs, show_warnings)
-                    total_chunk = np.concatenate((total_chunk, mp_result[chr_b].get()), axis=0)
-                    del mp_result[chr_b]
             # write at the end of every chr_a
             write_pixels_chunk(outfile, binsize, total_chunk, multi_res)
             del total_chunk
@@ -937,6 +941,8 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
         if not silent:
             print('... Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
+    for i in range(0, 1000):
+        reqarr[i].close()
 
     if not silent:
         if WARN and not show_warnings:
