@@ -79,9 +79,17 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
         md5.update(str_val)
         return md5.hexdigest(), bin_lens
 
+    def test_convert(self):
+        hic2cool_convert(self.infile_name, self.outfile_name_all)
+        assert os.stat(self.outfile_name_all).st_size == 6158552
+
+    def test_convert_multiprocessing(self):
+        hic2cool_convert(self.infile_name, self.outfile_name_all, 0, 2)
+        assert os.stat(self.outfile_name_all).st_size == 6158552
+
     def test_0_run_with_warnings(self):
         with captured_output() as (out, err):
-            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, True)
+            hic2cool_convert(self.infile_name, self.outfile_name, self.binsize, 1, True)
         read_err = err.getvalue().strip()
         self.assertTrue('WARNING' in read_err)
 
