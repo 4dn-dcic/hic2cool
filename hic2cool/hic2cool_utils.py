@@ -806,7 +806,7 @@ def run_hic2cool_updates(updates, infile, writefile):
     print('### Finished! Output written to: %s' % writefile)
 
 
-def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=False, nproc=1):
+def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False, silent=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -909,19 +909,24 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
                 # and c2-c1 reciprocally
                 if chr_key in covered_chr_pairs:
                     continue
+                #mp_result[chr_b] = parse_hic(infile, chr_key, unit, binsize,
+                #                             pair_footer_info, chr_offset_map, chr_bins,
+                #                             used_chrs, show_warnings)
                 mp_result[chr_b] = pool.apply_async(parse_hic, (infile, chr_key, unit, binsize,
                                                                 pair_footer_info, chr_offset_map, chr_bins,
                                                                 used_chrs, show_warnings,))
+                covered_chr_pairs.append(chr_key)
             for chr_b in used_chrs:
                 if chr_b in mp_result:
                     mp_result[chr_b].wait()
-                    tmp_chunk = mp_result[chr_b].get()
+                    #tmp_chunk = mp_result[chr_b]
+                    #tmp_chunk = mp_result[chr_b].get()
+                #tmp_chunk = parse_hic(infile, chr_key, unit, binsize,
                 #tmp_chunk = parse_hic(req, mmap_buf, outfile, chr_key, unit, binsize,
                 #                      pair_footer_info, chr_offset_map, chr_bins,
                 #                      used_chrs, show_warnings)
-                    total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
-                    del tmp_chunk
-                    covered_chr_pairs.append(chr_key)
+                    total_chunk = np.concatenate((total_chunk, mp_result[chr_b].get()), axis=0)
+                    del mp_result[chr_b]
             # write at the end of every chr_a
             write_pixels_chunk(outfile, binsize, total_chunk, multi_res)
             del total_chunk
