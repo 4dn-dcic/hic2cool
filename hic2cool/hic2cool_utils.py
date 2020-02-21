@@ -38,6 +38,8 @@ from collections import OrderedDict
 from ._version import __version__
 from .hic2cool_updates import prepare_hic2cool_updates
 from .hic2cool_config import *
+from multiprocessing import Pool
+#from multiprocessing import Process, Manager
 
 # input vs. raw_input for python 2/3
 try:
@@ -308,7 +310,7 @@ def read_normalization_vector(f, buf, entry):
     return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
 
 
-def parse_hic(req, buf, outfile, chr_key, unit, binsize, pair_footer_info,
+def parse_hic(req, pool, nproc, chr_key, unit, binsize, pair_footer_info,
               chr_offset_map, chr_bins, used_chrs, show_warnings):
     """
     Adapted from the straw() function in the original straw package.
@@ -319,6 +321,7 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize, pair_footer_info,
     generously provided by Nezar. Reads are buffered using mmap and a lot of
     functions were condensed
     """
+    global mmap_buf
     # join chunk is an np array
     # that will contain the entire list of c1/c2 counts
     join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
@@ -339,22 +342,45 @@ def parse_hic(req, buf, outfile, chr_key, unit, binsize, pair_footer_info,
         return join_chunk
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
-    block_info, block_bins, block_cols = read_blockinfo(req, buf, myFilePos, unit, binsize)
-    return build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices)
+    block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
+    if len(block_info) > 1:
+        nsplit = nproc
+        if nsplit > len(block_info):
+            nsplit = len(block_info)
+        mpi_result = [None] * nsplit
+        blocklen = len(block_info) // nsplit + 1
+        for mpi in range(0, nsplit):
+            block_start = mpi * blocklen
+            block_end = (mpi + 1) * blocklen
+            if block_end > len(block_info):
+                block_end = len(block_info)
+            mpi_result[mpi] = pool.apply_async(build_counts_chunk, (mpi, c1, c2, block_info[block_start:block_end], chr_offset_map, region_indices,))
+        result_all = []
+        for mpi in range(0, nsplit):
+            mpi_result[mpi].wait()
+            result_all.extend(mpi_result[mpi].get())
+        return np.concatenate(result_all, axis=0)
+    else:
+        result_all = build_counts_chunk(0, c1, c2, block_info, chr_offset_map, region_indices)
+        return np.concatenate(result_all, axis=0)
+    #return build_counts_chunk(nproc, c1, c2, block_info, chr_offset_map, region_indices)
 
 
-def build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices):
+def build_counts_chunk(mpi, c1, c2, block_info, chr_offset_map, region_indices):
     """
     Takes the given block_info and find those bin_IDs/counts from the hic file,
     using them to build and return a chunk of counts
     """
     [binX0, binX1, binY0, binY1] = region_indices
     block_results = []
+    global reqarr
+    req = reqarr[mpi]
     for block_record in block_info:
         records = read_block(req, block_record)
         # skip empty records
         if not records.size:
             continue
+            #result[str(mpi)] = np.zeros(0, dtype=CHUNK_DTYPE)
         mask = ((records['bin1_id'] >= binX0) &
                 (records['bin1_id'] < binX1) &
                 (records['bin2_id'] >= binY0) &
@@ -364,7 +390,7 @@ def build_counts_chunk(req, c1, c2, block_info, chr_offset_map, region_indices):
         records['bin1_id'] += chr_offset_map[c1]
         records['bin2_id'] += chr_offset_map[c2]
         block_results.append(records)
-    return np.concatenate(block_results, axis=0)
+    return block_results
 
 
 def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata,
@@ -803,7 +829,7 @@ def run_hic2cool_updates(updates, infile, writefile):
     print('### Finished! Output written to: %s' % writefile)
 
 
-def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=False):
+def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False, silent=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -816,6 +842,7 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
                 Final .cool structure will change depending on this param (see README)
     <show_warnings> bool. If True, print out WARNING messages
     <silent> bool. If true, hide standard output
+    <nproc> number of processes to use
     """
     unit = 'BP'  # only using base pair unit for now
     resolution = int(resolution)
@@ -825,9 +852,14 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
     global WARN
     WARN = False
     req = open(infile, 'rb')
-    buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
+    global reqarr
+    reqarr = []
+    for i in range(0, nproc):
+        reqarr.append(open(infile, 'rb'))
+    global mmap_buf
+    mmap_buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
     used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
-    pair_footer_info, expected, factors, norm_info = read_footer(req, buf, masteridx)
+    pair_footer_info, expected, factors, norm_info = read_footer(req, mmap_buf, masteridx)
     # expected/factors unused for now
     del expected
     del factors
@@ -882,10 +914,11 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
             print_stderr('!!! WARNING: removed pre-existing file: %s' % (outfile))
 
     print('### Converting')
+    pool = Pool(processes=nproc)
     for binsize in use_resolutions:
         t_start = time.time()
         # initialize cooler file. return per resolution bin offset maps
-        chr_offset_map, chr_bins = initialize_res(outfile, req, buf, unit, used_chrs,
+        chr_offset_map, chr_bins = initialize_res(outfile, req, mmap_buf, unit, used_chrs,
                                         genome, metadata, binsize, norm_info, multi_res, show_warnings)
         covered_chr_pairs = []
         for chr_a in used_chrs:
@@ -902,7 +935,7 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
                 # and c2-c1 reciprocally
                 if chr_key in covered_chr_pairs:
                     continue
-                tmp_chunk = parse_hic(req, buf, outfile, chr_key, unit, binsize,
+                tmp_chunk = parse_hic(req, pool, nproc, chr_key, unit, binsize,
                                       pair_footer_info, chr_offset_map, chr_bins,
                                       used_chrs, show_warnings)
                 total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
@@ -918,6 +951,11 @@ def hic2cool_convert(infile, outfile, resolution=0, show_warnings=False, silent=
         if not silent:
             print('... Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
+    for i in range(0, nproc):
+        reqarr[i].close()
+    pool.close()
+    pool.join()
+
     if not silent:
         if WARN and not show_warnings:
             print('... Warnings were found in this run. Run with -v to display them.')

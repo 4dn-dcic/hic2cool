@@ -42,6 +42,12 @@ def main():
         type=int,
         default=0
     )
+    convert_subparser.add_argument(
+        "-p", "--nproc",
+        help="number of processes to use to parse hic file. default set to 1",
+        type=int,
+        default=1
+    )
 
     # add a subparser for the 'update' command
     update_help = 'update a cooler file produced by hic2cool'
@@ -77,7 +83,7 @@ def main():
     # lastly, get the mode and specific args
     args = secondary_parser.parse_args(args=remaining, namespace=primary_namespace)
     if args.mode == 'convert':
-        hic2cool_convert(args.infile, args.outfile, args.resolution, args.warnings, args.silent)
+        hic2cool_convert(args.infile, args.outfile, args.resolution, args.nproc, args.warnings, args.silent)
     elif args.mode == 'update':
         hic2cool_update(args.infile, args.outfile, args.warnings, args.silent)
     elif args.mode == 'extract-norms':
