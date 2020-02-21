@@ -343,17 +343,20 @@ def parse_hic(req, pool, nproc, chr_key, unit, binsize, pair_footer_info,
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
     block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
-    if len(block_info) >= nproc:
-        mpi_result = [None] * nproc
-        blocklen = len(block_info) // nproc + 1
-        for mpi in range(0, nproc):
+    if len(block_info) > 1:
+        nsplit = nproc
+        if nsplit > len(block_info):
+            nsplit = len(block_info)
+        mpi_result = [None] * nsplit
+        blocklen = len(block_info) // nsplit + 1
+        for mpi in range(0, nsplit):
             block_start = mpi * blocklen
             block_end = (mpi + 1) * blocklen
             if block_end > len(block_info):
                 block_end = len(block_info)
             mpi_result[mpi] = pool.apply_async(build_counts_chunk, (mpi, c1, c2, block_info[block_start:block_end], chr_offset_map, region_indices,))
         result_all = []
-        for mpi in range(0, nproc):
+        for mpi in range(0, nsplit):
             mpi_result[mpi].wait()
             result_all.extend(mpi_result[mpi].get())
         return np.concatenate(result_all, axis=0)
