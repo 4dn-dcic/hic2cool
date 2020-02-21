@@ -40,7 +40,6 @@ setup(
     license = "MIT",
     keywords = ["bioinformatics", "genomics", "hi-c", "juicer", "cooler", "contact-matrix", "file-format"],
     install_requires = requires,
-    setup_requires = requires,
     tests_require = requires,
     test_suite = "test",
     entry_points = {
