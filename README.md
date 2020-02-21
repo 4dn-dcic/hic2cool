@@ -8,7 +8,7 @@ The hic parsing code is based off the [straw project](https://github.com/theaide
 
 ## Important
 
-* hic2cool currently supports Python 2.7 and Python 3.x. **Support for Python 2 will end upon its end of life on January 1st, 2020.** Visit [the official countdown clock](https://pythonclock.org/) for more information.
+* Starting from version 0.8.0, hic2cool no longer supports Python 2.7.
 
 * If you converted a hic file using a version of hic2cool lower than 0.5.0, please update your cooler file with the [new update function](#updating-hic2cool-coolers).
 
@@ -20,7 +20,7 @@ $ pip install hic2cool
 Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in test.py.
 ```
 from hic2cool import hic2cool_convert
-hic2cool_convert(<infile>, <outfile>, <resolution (optional)>, <warnings (optional)>, <silent (optional)>)
+hic2cool_convert(<infile>, <outfile>, <resolution (optional)>, <nproc (optional)>, <warnings (optional)>, <silent (optional)>)
 ```
 
 
@@ -28,7 +28,7 @@ hic2cool_convert(<infile>, <outfile>, <resolution (optional)>, <warnings (option
 
 The main use of hic2cool is converting between filetypes using `hic2cool convert`. If you install hic2cool itself using pip, you use it on the command line with:
 ```
-$ hic2cool convert <infile> <outfile> -r <resolution>
+$ hic2cool convert <infile> <outfile> -r <resolution> -p <nproc>
 ```
 
 You can also download the code directly and run the setup yourself. First ensure that dependencies are installed:
@@ -43,7 +43,7 @@ $ python setup.py install
 
 Then, execute the Python code from the root directory with:
 ```
-$ python -m hic2cool convert <infile> <outfile> -r <resolution>
+$ python -m hic2cool convert <infile> <outfile> -r <resolution> -p <nproc>
 ```
 
 ### Arguments for hic2cool convert
@@ -52,7 +52,9 @@ $ python -m hic2cool convert <infile> <outfile> -r <resolution>
 
 **outfile** is a .cool output file.
 
-**-r**, or --resolution, is a integer bp resolution supported by the hic file. *Please note* that only resolutions contained within the original hic file can be used. If 0 is given, will use all resolutions to build a multi-resolution file. Default is 0.
+**-r**, or --resolution, is an integer bp resolution supported by the hic file. *Please note* that only resolutions contained within the original hic file can be used. If 0 is given, will use all resolutions to build a multi-resolution file. Default is 0.
+
+**-p**, or --nproc, is the number of processes to use. Default 1.
 
 **-w**, or --warnings, causes warnings to be explicitly printed to the console. This is false by default, though there are a few cases in which hic2cool will exit with an error based on the input hic file.
 
@@ -126,6 +128,10 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 
 ## Changelog
+### 0.8.0
+* multiprocessing support for convert
+* change in usage of convert API due to the addition of the `nproc` option
+* Python 2.7 is deprecated.
 ### 0.7.3
 * Pinned `pandas==0.24.2` since newer versions deprecate python 2
 ### 0.7.2
