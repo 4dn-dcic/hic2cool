@@ -227,8 +227,9 @@ def read_block(req, block_record):
         size = block_record[2]
     else: # malformed block
         return np.zeros(0, dtype=CHUNK_DTYPE)
-    req.seek(position)
-    compressedBytes = req.read(size)
+    # req.seek(position)
+    compressedBytes = reqs[position:(position+size)]
+    # compressedBytes = req.read(size)
     uncompressedBytes = zlib.decompress(compressedBytes)
     nRecords = struct.unpack(b'<i', uncompressedBytes[0:4])[0]
     block = np.zeros(nRecords, dtype=CHUNK_DTYPE)
@@ -852,6 +853,13 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
     global WARN
     WARN = False
     req = open(infile, 'rb')
+    global reqs
+    if nproc > 1:
+        reqs = req.read()
+        req.close()
+        req = open(infile, 'rb')
+    else:
+        reqs = None
     global reqarr
     reqarr = []
     for i in range(0, nproc):
