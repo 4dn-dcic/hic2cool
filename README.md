@@ -54,7 +54,7 @@ $ python -m hic2cool convert <infile> <outfile> -r <resolution> -p <nproc>
 
 **-r**, or --resolution, is an integer bp resolution supported by the hic file. *Please note* that only resolutions contained within the original hic file can be used. If 0 is given, will use all resolutions to build a multi-resolution file. Default is 0.
 
-**-p**, or --nproc, is the number of processes to use. Default 1.
+**-p**, or --nproc, is the number of processes to use. Default 1. The multiprocessing is not very efficient and would slightly improve speed only for large high-resolution matrices. 
 
 **-w**, or --warnings, causes warnings to be explicitly printed to the console. This is false by default, though there are a few cases in which hic2cool will exit with an error based on the input hic file.
 
