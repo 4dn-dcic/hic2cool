@@ -950,6 +950,8 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
     req.close()
     for i in range(0, nproc):
         reqarr[i].close()
+    pool.close()
+    pool.join()
 
     if not silent:
         if WARN and not show_warnings:
