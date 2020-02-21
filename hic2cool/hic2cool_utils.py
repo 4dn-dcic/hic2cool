@@ -39,6 +39,7 @@ from ._version import __version__
 from .hic2cool_updates import prepare_hic2cool_updates
 from .hic2cool_config import *
 from multiprocessing import Pool
+#from multiprocessing import Process, Manager
 
 # input vs. raw_input for python 2/3
 try:
@@ -309,7 +310,7 @@ def read_normalization_vector(f, buf, entry):
     return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
 
 
-def parse_hic(req, pool, chr_key, unit, binsize, pair_footer_info,
+def parse_hic(req, pool, nproc, chr_key, unit, binsize, pair_footer_info,
               chr_offset_map, chr_bins, used_chrs, show_warnings):
     """
     Adapted from the straw() function in the original straw package.
@@ -342,45 +343,51 @@ def parse_hic(req, pool, chr_key, unit, binsize, pair_footer_info,
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
     block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
-    return build_counts_chunk(pool, c1, c2, block_info, chr_offset_map, region_indices)
+    if len(block_info) >= nproc:
+        mpi_result = [None] * nproc
+        blocklen = len(block_info) // nproc + 1
+        for mpi in range(0, nproc):
+            block_start = mpi * blocklen
+            block_end = (mpi + 1) * blocklen
+            if block_end > len(block_info):
+                block_end = len(block_info)
+            mpi_result[mpi] = pool.apply_async(build_counts_chunk, (mpi, c1, c2, block_info[block_start:block_end], chr_offset_map, region_indices,))
+        result_all = []
+        for mpi in range(0, nproc):
+            mpi_result[mpi].wait()
+            result_all.extend(mpi_result[mpi].get())
+        return np.concatenate(result_all, axis=0)
+    else:
+        result_all = build_counts_chunk(0, c1, c2, block_info, chr_offset_map, region_indices)
+        return np.concatenate(result_all, axis=0)
+    #return build_counts_chunk(nproc, c1, c2, block_info, chr_offset_map, region_indices)
 
 
-def build_counts_chunk(pool, c1, c2, block_info, chr_offset_map, region_indices):
+def build_counts_chunk(mpi, c1, c2, block_info, chr_offset_map, region_indices):
     """
     Takes the given block_info and find those bin_IDs/counts from the hic file,
     using them to build and return a chunk of counts
     """
     [binX0, binX1, binY0, binY1] = region_indices
     block_results = []
-    mpi_results = []
-    mpi = 0
-    for block_record in block_info:
-        mpi_results.append(pool.apply_async(read_block_record, (mpi, block_record, c1, c2, chr_offset_map,
-                                                                binX0, binX1, binY0, binY1,)))
-        mpi += 1
-    for result in mpi_results:
-        result.wait()
-        if result.get() is None:
-            continue
-        block_results.append(result.get())
-    return np.concatenate(block_results, axis=0)
-
-
-def read_block_record(mpi, block_record, c1, c2, chr_offset_map, binX0, binX1, binY0, binY1):
+    global reqarr
     req = reqarr[mpi]
-    records = read_block(req, block_record)
-    # skip empty records
-    if not records.size:
-        return
-    mask = ((records['bin1_id'] >= binX0) &
-            (records['bin1_id'] < binX1) &
-            (records['bin2_id'] >= binY0) &
-            (records['bin2_id'] < binY1))
-    records = records[mask]
-    # add chr offsets
-    records['bin1_id'] += chr_offset_map[c1]
-    records['bin2_id'] += chr_offset_map[c2]
-    return records
+    for block_record in block_info:
+        records = read_block(req, block_record)
+        # skip empty records
+        if not records.size:
+            continue
+            #result[str(mpi)] = np.zeros(0, dtype=CHUNK_DTYPE)
+        mask = ((records['bin1_id'] >= binX0) &
+                (records['bin1_id'] < binX1) &
+                (records['bin2_id'] >= binY0) &
+                (records['bin2_id'] < binY1))
+        records = records[mask]
+        # add chr offsets
+        records['bin1_id'] += chr_offset_map[c1]
+        records['bin2_id'] += chr_offset_map[c2]
+        block_results.append(records)
+    return block_results
 
 
 def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata,
@@ -844,7 +851,7 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
     req = open(infile, 'rb')
     global reqarr
     reqarr = []
-    for i in range(0, 1000):
+    for i in range(0, nproc):
         reqarr.append(open(infile, 'rb'))
     global mmap_buf
     mmap_buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
@@ -925,7 +932,7 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
                 # and c2-c1 reciprocally
                 if chr_key in covered_chr_pairs:
                     continue
-                tmp_chunk = parse_hic(req, pool, chr_key, unit, binsize,
+                tmp_chunk = parse_hic(req, pool, nproc, chr_key, unit, binsize,
                                       pair_footer_info, chr_offset_map, chr_bins,
                                       used_chrs, show_warnings)
                 total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
@@ -941,7 +948,7 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
         if not silent:
             print('... Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
     req.close()
-    for i in range(0, 1000):
+    for i in range(0, nproc):
         reqarr[i].close()
 
     if not silent:
