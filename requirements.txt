@@ -1,5 +1,7 @@
-h5py==2.8.0
-pandas==0.24.2
-numpy==1.16.3
-scipy==1.2.1
-cooler==0.8.5
+cython>=0.29.15
+cytoolz>=0.10.1
+h5py>=2.8.0
+pandas>=0.24.2
+numpy>=1.16.3
+scipy>=1.2.1
+cooler>=0.8.5
