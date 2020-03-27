@@ -19,6 +19,7 @@ $ pip install hic2cool
 
 You can also download the code directly and run the setup yourself.
 ```
+# setuptools >=42 is recommended
 $ python setup.py install
 ```
 
