@@ -17,6 +17,11 @@ The hic parsing code is based off the [straw project](https://github.com/theaide
 $ pip install hic2cool
 ```
 
+You can also download the code directly and run the setup yourself.
+```
+$ python setup.py install
+```
+
 Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in test.py.
 ```
 from hic2cool import hic2cool_convert
@@ -29,21 +34,6 @@ hic2cool_convert(<infile>, <outfile>, <resolution (optional)>, <nproc (optional)
 The main use of hic2cool is converting between filetypes using `hic2cool convert`. If you install hic2cool itself using pip, you use it on the command line with:
 ```
 $ hic2cool convert <infile> <outfile> -r <resolution> -p <nproc>
-```
-
-You can also download the code directly and run the setup yourself. First ensure that dependencies are installed:
-```
-$ pip install -r requirements.txt
-```
-
-You can alternatively build the hic2cool package with:
-```
-$ python setup.py install
-```
-
-Then, execute the Python code from the root directory with:
-```
-$ python -m hic2cool convert <infile> <outfile> -r <resolution> -p <nproc>
 ```
 
 ### Arguments for hic2cool convert
@@ -128,6 +118,8 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 
 ## Changelog
+### 0.8.1
+* `setup.py` takes dependencies directly from `requirements.txt` (`requirements.txt` updated to match `setup.py`)
 ### 0.8.0
 * multiprocessing support for convert
 * change in usage of convert API due to the addition of the `nproc` option
