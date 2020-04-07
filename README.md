@@ -119,6 +119,8 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 
 ## Changelog
+### 0.8.3
+* Partial fix for zlib decompression issue.
 ### 0.8.2
 * loosened version for `numpy`, `scipy` and `pandas`.
 ### 0.8.1
