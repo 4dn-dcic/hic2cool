@@ -56,7 +56,7 @@ def main():
     update_subparser.add_argument("-o", "--outfile", help="optional new output file path", default='')
 
     # add a subparser for the 'extract-norms' command
-    extract_help = 'extract normalization vectors from a cooler file and add them to a cooler file'
+    extract_help = 'extract normalization vectors from a hic file and add them to a cooler file'
     extract_subparser = subparsers.add_parser('extract-norms', help=extract_help, description=extract_help)
     extract_subparser.add_argument("infile", help="hic file path")
     extract_subparser.add_argument("outfile", help="cooler file path")
