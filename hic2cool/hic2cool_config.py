@@ -12,7 +12,7 @@ import numpy as np
 
 # Cooler metadata
 COOLER_FORMAT = "HDF5::Cooler"
-COOLER_FORMAT_VERSION = 3
+COOLER_FORMAT_VERSION = 2
 MCOOL_FORMAT = "HDF5::MCOOL"
 MCOOL_FORMAT_VERSION = 2
 URL = "https://github.com/4dn-dcic/hic2cool"
