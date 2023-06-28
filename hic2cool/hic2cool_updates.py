@@ -93,6 +93,7 @@ def update_invert_weights(writefile):
                 update_invert_weight_for_resolution(h5_file['resolutions'][res]['bins'], res=res)
         else:
             update_invert_weight_for_resolution(h5_file['bins'])
+        h5_file.close()
 
 
 def update_cooler_schema_v3(writefile):
@@ -117,6 +118,7 @@ def update_cooler_schema_v3(writefile):
                 add_v3_attrs(h5_file['resolutions'][res], res=res)
         else:
             add_v3_attrs(h5_file)
+       h5_file.close()
 
 
 def update_mcool_schema_v2(writefile):
@@ -134,3 +136,4 @@ def update_mcool_schema_v2(writefile):
             print('... Added format and format-version attributes for the mcool')
         else:
             print('... Not a multi-res file, so will not add mcool schema attributes')
+        h5_file.close()
