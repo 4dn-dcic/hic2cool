@@ -87,12 +87,13 @@ def update_invert_weights(writefile):
         else:
             print('... Inverted following weights: %s' % found_weights)
 
-    with h5py.File(writefile) as h5_file:
+    with h5py.File(writefile, "r+") as h5_file:
         if 'resolutions' in h5_file:
             for res in h5_file['resolutions']:
                 update_invert_weight_for_resolution(h5_file['resolutions'][res]['bins'], res=res)
         else:
             update_invert_weight_for_resolution(h5_file['bins'])
+        h5_file.close()
 
 
 def update_cooler_schema_v3(writefile):
@@ -111,19 +112,20 @@ def update_cooler_schema_v3(writefile):
         else:
             print('... Added format-version and storage-mode attributes')
 
-    with h5py.File(writefile) as h5_file:
+    with h5py.File(writefile, "r+") as h5_file:
         if 'resolutions' in h5_file:
             for res in h5_file['resolutions']:
                 add_v3_attrs(h5_file['resolutions'][res], res=res)
         else:
             add_v3_attrs(h5_file)
+       h5_file.close()
 
 
 def update_mcool_schema_v2(writefile):
     """
     Add format and format-version attributes to the base level of an mcool
     """
-    with h5py.File(writefile) as h5_file:
+    with h5py.File(writefile, "r+") as h5_file:
         # only run if it's an mcool and 'resolutions' exist
         if 'resolutions' in h5_file:
             mcool_info = {
@@ -134,3 +136,4 @@ def update_mcool_schema_v2(writefile):
             print('... Added format and format-version attributes for the mcool')
         else:
             print('... Not a multi-res file, so will not add mcool schema attributes')
+        h5_file.close()
