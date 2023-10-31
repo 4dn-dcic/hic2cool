@@ -1,5 +1,0 @@
-h5py>=2.8.0
-numpy>=1.10.1
-scipy
-pandas
-cooler>=0.8.5

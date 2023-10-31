@@ -38,7 +38,6 @@ from collections import OrderedDict
 from ._version import __version__
 from .hic2cool_updates import prepare_hic2cool_updates
 from .hic2cool_config import *
-#import dill
 from multiprocess import Pool
 
 # input vs. raw_input for python 2/3
