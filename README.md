@@ -17,10 +17,10 @@ The hic parsing code is based off the [straw project](https://github.com/theaide
 $ pip install hic2cool
 ```
 
-You can also download the code directly and run the setup yourself.
+You can also download the code directly and install using Poetry (as of version 1.0.0)
+
 ```
-# setuptools >=42 is recommended
-$ python setup.py install
+$ poetry install
 ```
 
 Once the package is installed, the main method is hic2cool_convert. It takes the same parameters as hic2cool.py, described in the next section. Example usage in a Python script is shown below or in test.py.
@@ -119,6 +119,10 @@ You may also provide the optional `-e` flag, which will cause the mitchondrial c
 
 
 ## Changelog
+### 1.0.1
+* Restore command line usage, adds missing README update
+### 1.0.0
+*  Switch to poetry, upgraded `python`, `numpy`, `cooler` versions, h5file I/O clean up, replace `multiprocessing` with `multiprocess'
 ### 0.8.3
 * Partial fix for zlib decompression issue.
 ### 0.8.2
