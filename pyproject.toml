@@ -1,0 +1,41 @@
+# Written by Carl Vitzthum with help from Soo Lee
+# This code was originally based off of the straw project by Neva C. Durand and
+# Yue Wu (https://github.com/theaidenlab/straw). The cooler file writing was
+# based off of much of the CLI code contained in this
+# repo: https://github.com/mirnylab/cooler.
+
+[tool.poetry]
+name = "hic2cool"
+version = "1.0.0"
+description = """Converter between hic files (from juicer) and single-resolution or multi-resolution cool files (for cooler).  Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as an imported package or a stand-alone Python tool for command line conversion."""
+authors = ["Carl Vitzthum <carl.vitzthum@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/4dn-dcic/hic2cool/"
+keywords = ["bioinformatics", "genomics", "hi-c", "juicer", "cooler", "contact-matrix", "file-format"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Bio-Informatics"
+]
+include = []
+packages = [
+    { include="hic2cool", from="." }
+]
+
+[tool.poetry.dependencies]
+python = ">=3.8,<3.10"
+numpy = ">=1.9"
+scipy = ">=1.10.1"
+pandas = ">=1.0"
+h5py = ">=2.5.0"
+cooler = "0.9.3"
+
+[build-system]
+requires = ["poetry_core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

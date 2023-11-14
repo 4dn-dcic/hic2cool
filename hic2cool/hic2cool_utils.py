@@ -38,8 +38,7 @@ from collections import OrderedDict
 from ._version import __version__
 from .hic2cool_updates import prepare_hic2cool_updates
 from .hic2cool_config import *
-from multiprocessing import Pool
-#from multiprocessing import Process, Manager
+from multiprocess import Pool
 
 # input vs. raw_input for python 2/3
 try:
@@ -310,8 +309,8 @@ def read_normalization_vector(f, buf, entry):
     return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
 
 
-def parse_hic(req, pool, nproc, chr_key, unit, binsize, pair_footer_info,
-              chr_offset_map, chr_bins, used_chrs, show_warnings):
+def parse_hic(infile, pool, nproc, chr_key, unit, binsize, pair_footer_info,
+              chr_offset_map, chr_bins, used_chrs, show_warnings, mmap_buf, req_ar):
     """
     Adapted from the straw() function in the original straw package.
     Mainly, since all chroms are iterated over, the read_header and read_footer
@@ -321,13 +320,12 @@ def parse_hic(req, pool, nproc, chr_key, unit, binsize, pair_footer_info,
     generously provided by Nezar. Reads are buffered using mmap and a lot of
     functions were condensed
     """
-    global mmap_buf
     # join chunk is an np array
     # that will contain the entire list of c1/c2 counts
     join_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
     if unit not in ["BP", "FRAG"]:
         error_string = "!!! ERROR. Unit specified incorrectly, must be one of <BP/FRAG>"
-        force_exit(error_string, req)
+        force_exit(error_string)
     c1 = int(chr_key.split('_')[0])
     c2 = int(chr_key.split('_')[1])
     try:
@@ -342,7 +340,8 @@ def parse_hic(req, pool, nproc, chr_key, unit, binsize, pair_footer_info,
         return join_chunk
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
-    block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
+    with open(infile, 'rb') as req:
+        block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
     if len(block_info) >= nproc and nproc >= 2:
         mpi_result = [None] * nproc
         blocklen = len(block_info) // nproc
@@ -352,29 +351,28 @@ def parse_hic(req, pool, nproc, chr_key, unit, binsize, pair_footer_info,
                 block_end = len(block_info)
             else:
                 block_end = (mpi + 1) * blocklen
-            mpi_result[mpi] = pool.apply_async(build_counts_chunk, (mpi, c1, c2, block_info[block_start:block_end], chr_offset_map, region_indices,))
+            mpi_result[mpi] = pool.apply_async(build_counts_chunk, (mpi, c1, c2, block_info[block_start:block_end], chr_offset_map, region_indices, req_ar))
         result_all = []
         for mpi in range(0, nproc):
             mpi_result[mpi].wait()
             result_all.extend(mpi_result[mpi].get())
         return np.concatenate(result_all, axis=0)
     else:
-        result_all = build_counts_chunk(0, c1, c2, block_info, chr_offset_map, region_indices)
+        result_all = build_counts_chunk(0, c1, c2, block_info, chr_offset_map, region_indices, req_ar)
         return np.concatenate(result_all, axis=0)
     #return build_counts_chunk(nproc, c1, c2, block_info, chr_offset_map, region_indices)
 
 
-def build_counts_chunk(mpi, c1, c2, block_info, chr_offset_map, region_indices):
+def build_counts_chunk(mpi, c1, c2, block_info, chr_offset_map, region_indices, reqarr):
     """
     Takes the given block_info and find those bin_IDs/counts from the hic file,
     using them to build and return a chunk of counts
     """
     [binX0, binX1, binY0, binY1] = region_indices
     block_results = []
-    global reqarr
-    req = reqarr[mpi]
+    req_file = reqarr[mpi]
     for block_record in block_info:
-        records = read_block(req, block_record)
+        records = read_block(req_file, block_record)
         # skip empty records
         if not records.size:
             continue
@@ -391,7 +389,7 @@ def build_counts_chunk(mpi, c1, c2, block_info, chr_offset_map, region_indices):
     return block_results
 
 
-def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata,
+def initialize_res(outfile, infile, buf, unit, chr_info, genome, metadata,
                    resolution, norm_info, multi_res, show_warnings):
     """
     Use various information to initialize a cooler file in HDF5 format. Tables
@@ -427,7 +425,7 @@ def initialize_res(outfile, req, buf, unit, chr_info, genome, metadata,
         # bins
         bin_table, chr_offsets, by_chr_bins, by_chr_offset_map = create_bins(chr_info, resolution)
         grp = h5resolution.create_group('bins')
-        write_bins(grp, req, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, show_warnings)
+        write_bins(grp, infile, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, show_warnings)
         n_bins = len(bin_table)
         # indexes (just initialize bin1offets)
         grp = h5resolution.create_group('indexes')
@@ -514,7 +512,7 @@ def create_bins(chrs, binsize):
     return np.array(bins_array), np.array(offsets), by_chr_bins, by_chr_offsets
 
 
-def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, show_warnings):
+def write_bins(grp, infile, buf, unit, res, chroms, bins, by_chr_bins, norm_info, show_warnings):
     """
     Write the bins table, which has columns: chrom, start (in bp), end (in bp),
     and one column for each normalization type, named for the norm type.
@@ -557,11 +555,12 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, s
                 WARN = True
                 if show_warnings:
                     print_stderr('!!! WARNING. Normalization vector %s does not exist for chr idx %s.'
-                          % (norm, chr_idx))
+                        % (norm, chr_idx))
                 # add a vector of nan's for missing vectors
                 norm_data.extend([np.nan]*chr_bin_end)
                 continue
-            norm_vector = read_normalization_vector(req, buf, norm_key)
+            with open(infile, "rb") as req:    
+                norm_vector = read_normalization_vector(req, buf, norm_key)
             # NOTE: possible issue to look into
             # norm_vector returned by read_normalization_vector has an extra
             # entry at the end (0.0) that is never used and causes the
@@ -575,7 +574,7 @@ def write_bins(grp, req, buf, unit, res, chroms, bins, by_chr_bins, norm_info, s
             error_str = (
                 '!!! ERROR. Length of normalization vector %s does not match the'
                 ' number of bins.\nThis is likely a problem with the hic file' % (norm))
-            force_exit(error_str, req)
+            force_exit(error_str)
         grp.create_dataset(
             norm,
             shape=(len(norm_data),),
@@ -669,6 +668,7 @@ def write_pixels_chunk(outfile, resolution, chunks, multi_res):
             prev_size = dataset.shape[0]
             dataset.resize(prev_size + nnz, axis=0)
             dataset[prev_size:] = chunks[set_name]
+        h5file.close()
 
 
 def finalize_resolution_cool(outfile, resolution, multi_res):
@@ -691,6 +691,7 @@ def finalize_resolution_cool(outfile, resolution, multi_res):
         # update attributes with nnz
         info = {'nnz': nnz}
         h5resolution.attrs.update(info)
+        h5file.close()
 
 
 def rlencode(array, chunksize=None):
@@ -824,6 +825,7 @@ def run_hic2cool_updates(updates, infile, writefile):
             h5_file.attrs['generated-by'] = generated_by
             h5_file.attrs['update-date'] = update_data
             print('... Updated metadata')
+        h5_file.close()
     print('### Finished! Output written to: %s' % writefile)
 
 
@@ -850,11 +852,9 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
     global WARN
     WARN = False
     req = open(infile, 'rb')
-    global reqarr
     reqarr = []
     for i in range(0, nproc):
         reqarr.append(open(infile, 'rb'))
-    global mmap_buf
     mmap_buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
     used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
     pair_footer_info, expected, factors, norm_info = read_footer(req, mmap_buf, masteridx)
@@ -910,13 +910,13 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
             force_exit(error_string, req)
         if WARN:
             print_stderr('!!! WARNING: removed pre-existing file: %s' % (outfile))
-
+    req.close()
     print('### Converting')
     pool = Pool(processes=nproc)
     for binsize in use_resolutions:
         t_start = time.time()
         # initialize cooler file. return per resolution bin offset maps
-        chr_offset_map, chr_bins = initialize_res(outfile, req, mmap_buf, unit, used_chrs,
+        chr_offset_map, chr_bins = initialize_res(outfile, infile, mmap_buf, unit, used_chrs,
                                         genome, metadata, binsize, norm_info, multi_res, show_warnings)
         covered_chr_pairs = []
         for chr_a in used_chrs:
@@ -933,9 +933,9 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
                 # and c2-c1 reciprocally
                 if chr_key in covered_chr_pairs:
                     continue
-                tmp_chunk = parse_hic(req, pool, nproc, chr_key, unit, binsize,
+                tmp_chunk = parse_hic(infile, pool, nproc, chr_key, unit, binsize,
                                       pair_footer_info, chr_offset_map, chr_bins,
-                                      used_chrs, show_warnings)
+                                      used_chrs, show_warnings, mmap_buf, reqarr)
                 total_chunk = np.concatenate((total_chunk, tmp_chunk), axis=0)
                 del tmp_chunk
                 covered_chr_pairs.append(chr_key)
@@ -948,7 +948,6 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
         elapsed_parse = t_parse - t_start
         if not silent:
             print('... Resolution %s took: %s seconds.' % (binsize, elapsed_parse))
-    req.close()
     for i in range(0, nproc):
         reqarr[i].close()
     pool.close()

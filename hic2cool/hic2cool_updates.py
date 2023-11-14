@@ -118,7 +118,7 @@ def update_cooler_schema_v3(writefile):
                 add_v3_attrs(h5_file['resolutions'][res], res=res)
         else:
             add_v3_attrs(h5_file)
-       h5_file.close()
+        h5_file.close()
 
 
 def update_mcool_schema_v2(writefile):

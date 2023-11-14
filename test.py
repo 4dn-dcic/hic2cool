@@ -62,7 +62,7 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
         Also return int bin length found in the file
         """
         str_val = ''
-        with h5py.File(fname) as h5:
+        with h5py.File(fname, 'r') as h5:
             if not use_resolutions:
                 use_resolutions = [r for r in h5['resolutions']]
             for res in use_resolutions:
@@ -81,11 +81,11 @@ class TestRunConvertAndExtractNorms(unittest.TestCase):
 
     def test_convert(self):
         hic2cool_convert(self.infile_name, self.outfile_name_all)
-        assert os.stat(self.outfile_name_all).st_size == 6158552
+        assert os.stat(self.outfile_name_all).st_size == 6158040
 
     def test_convert_multiprocessing(self):
         hic2cool_convert(self.infile_name, self.outfile_name_all, 0, 2)
-        assert os.stat(self.outfile_name_all).st_size == 6158552
+        assert os.stat(self.outfile_name_all).st_size == 6158040
 
     def test_0_run_with_warnings(self):
         with captured_output() as (out, err):
@@ -330,7 +330,6 @@ class TestWithCooler(unittest.TestCase):
             res500kb_bins = h5file['resolutions']['500000']['bins']
             for norm in NORMS:
                 self.assertTrue(norm not in res500kb_bins.keys())
-
 
 class TestRunUpdate(unittest.TestCase):
     infile_name = 'test_data/hic2cool_0.4.2_single_res.cool'
