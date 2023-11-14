@@ -6,7 +6,7 @@
 
 [tool.poetry]
 name = "hic2cool"
-version = "1.0.0"
+version = "1.0.1"
 description = """Converter between hic files (from juicer) and single-resolution or multi-resolution cool files (for cooler).  Both hic and cool files describe Hi-C contact matrices. Intended to be lightweight, this can be used as an imported package or a stand-alone Python tool for command line conversion."""
 authors = ["Carl Vitzthum <carl.vitzthum@gmail.com>"]
 license = "MIT"
@@ -35,6 +35,12 @@ scipy = ">=1.10.1"
 pandas = ">=1.0"
 h5py = ">=2.5.0"
 cooler = "0.9.3"
+
+
+[tool.poetry.plugins]
+
+[tool.poetry.plugins.console_scripts]
+    "hic2cool" = "hic2cool.__main__:main"
 
 [build-system]
 requires = ["poetry_core>=1.0.0"]
