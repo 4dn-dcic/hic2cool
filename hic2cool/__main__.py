@@ -48,6 +48,14 @@ def main():
         type=int,
         default=1
     )
+    convert_subparser.add_argument(
+        "-N", "--norm-method",
+        help="normalization method that should be used for the weight-vector. May "
+             "be any of the normalizations provided in the hic files, e.g. VC, VC_SQRT, SCALE. "
+             "The weight of bin i count will be determined by, for instance, weight_i = VC_i/RAW_i",
+        type=str,
+        default=""
+    )
 
     # add a subparser for the 'update' command
     update_help = 'update a cooler file produced by hic2cool'
@@ -82,8 +90,9 @@ def main():
     (primary_namespace, remaining) = primary_parser.parse_known_args()
     # lastly, get the mode and specific args
     args = secondary_parser.parse_args(args=remaining, namespace=primary_namespace)
+    print(args)
     if args.mode == 'convert':
-        hic2cool_convert(args.infile, args.outfile, args.resolution, args.nproc, args.warnings, args.silent)
+        hic2cool_convert(args.infile, args.outfile, args.resolution, args.norm_method, args.nproc, args.warnings, args.silent)
     elif args.mode == 'update':
         hic2cool_update(args.infile, args.outfile, args.warnings, args.silent)
     elif args.mode == 'extract-norms':

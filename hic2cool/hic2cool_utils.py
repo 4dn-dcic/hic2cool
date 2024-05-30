@@ -61,7 +61,6 @@ def readcstr(f):
         else:
             buf += b
 
-
 def read_header(req):
     """
     Takes in a .hic file and returns a dictionary containing information about
@@ -75,45 +74,59 @@ def read_header(req):
     resolutions = []
     magic_string = struct.unpack(b'<3s', req.read(3))[0]
     req.read(1)
-    if (magic_string != b"HIC"):
-        error_string = ('... This does not appear to be a HiC file; '
-                       'magic string is incorrect')
+    if magic_string != b"HIC":
+        error_string = '... This does not appear to be a HiC file; magic string is incorrect'
         force_exit(error_string, req)
     global version
     version = struct.unpack(b'<i', req.read(4))[0]
-    masterindex = struct.unpack(b'<q', req.read(8))[0]
+    footerPosition = struct.unpack(b'<q', req.read(8))[0]
     genome = b""
     c = req.read(1)
-    while (c != b'\0'):
+    while c != b'\0':
         genome += c
         c = req.read(1)
     genome = genome.decode('ascii')
-    # metadata extraction
-    metadata = {}
+    if version >= 9:
+        frag_resolutions = []
+        normVectorIndexPosition = struct.unpack('<q', req.read(8))[0]
+        normVectorIndexLength = struct.unpack('<q', req.read(8))[0]
     nattributes = struct.unpack(b'<i', req.read(4))[0]
-    for x in range(nattributes):
+    metadata = {}
+    for _ in range(nattributes):
         key = readcstr(req)
         value = readcstr(req)
         metadata[key] = value
+
     nChrs = struct.unpack(b'<i', req.read(4))[0]
-    for i in range(0, nChrs):
+    for i in range(nChrs):
         name = readcstr(req)
-        length = struct.unpack(b'<i', req.read(4))[0]
+        if version >= 9:
+            length = struct.unpack(b'<q', req.read(8))[0]
+        else:
+            length = struct.unpack(b'<i', req.read(4))[0]
         if name and length:
             chrs[i] = [i, name, length]
+
     nBpRes = struct.unpack(b'<i', req.read(4))[0]
-    # find bp delimited resolutions supported by the hic file
-    for x in range(0, nBpRes):
+    for _ in range(nBpRes):
         res = struct.unpack(b'<i', req.read(4))[0]
         resolutions.append(res)
-    return chrs, resolutions, masterindex, genome, metadata
+        
+    nBpResFrag = struct.unpack(b'<i', req.read(4))[0]
+    for _ in range(nBpResFrag):
+        res = struct.unpack(b'<i', req.read(4))[0]
+        frag_resolutions.append(res)
 
+    return chrs, resolutions, footerPosition, genome, metadata
 
-def read_footer(f, buf, masterindex):
-    f.seek(masterindex)
+def read_footer(f, buf, footerPosition):
+    f.seek(footerPosition)
 
     cpair_info = {}
-    nBytes = struct.unpack(b'<i', f.read(4))[0]
+    if version >= 9:
+        nBytes = struct.unpack(b'<q', f.read(8))[0]
+    else:
+        nBytes = struct.unpack(b'<i', f.read(4))[0]
     nEntries = struct.unpack(b'<i', f.read(4))[0]
     for _ in range(nEntries):
         key = readcstr(f)
@@ -129,27 +142,44 @@ def read_footer(f, buf, masterindex):
     for _ in range(nExpectedValues):
         unit = readcstr(f)
         binsize = struct.unpack(b'<i', f.read(4))[0]
-
-        nValues = struct.unpack(b'<i', f.read(4))[0]
-        expected['RAW', unit, binsize] = np.frombuffer(
-            buf,
-            dtype=np.dtype('<d'),
-            count=nValues,
-            offset=f.tell())
-        f.seek(nValues * 8, 1)
-
-        nNormalizationFactors = struct.unpack(b'<i', f.read(4))[0]
-        factors['RAW', unit, binsize] = np.frombuffer(
-            buf,
-            dtype={'names':['chrom','factor'], 'formats':['<i', '<d']},
-            count=nNormalizationFactors,
-            offset=f.tell())
-        f.seek(nNormalizationFactors * 12, 1)
+        if version >= 9:
+            nValues = struct.unpack(b'<q', f.read(8))[0]
+            expected['RAW', unit, binsize] = np.frombuffer(
+                buf,
+                dtype='<f',
+                count=nValues,
+                offset=f.tell())
+            f.seek(nValues * 4, 1)
+            nNormalizationFactors = struct.unpack(b'<i', f.read(4))[0]
+            factors['RAW', unit, binsize] = np.frombuffer(
+                buf,
+                dtype={'names':['chrom','factor'], 'formats':['<i', '<f']},
+                count=nNormalizationFactors,
+                offset=f.tell())
+            f.seek(nNormalizationFactors * 8, 1)
+        else:
+            nValues = struct.unpack(b'<i', f.read(4))[0]
+            expected['RAW', unit, binsize] = np.frombuffer(
+                buf,
+                dtype=np.dtype('<d'),
+                count=nValues,
+                offset=f.tell())
+            f.seek(nValues * 8, 1)
+            nNormalizationFactors = struct.unpack(b'<i', f.read(4))[0]
+            factors['RAW', unit, binsize] = np.frombuffer(
+                buf,
+                dtype={'names':['chrom','factor'], 'formats':['<i', '<d']},
+                count=nNormalizationFactors,
+                offset=f.tell())
+            f.seek(nNormalizationFactors * 12, 1)
+            
     # normalized (norm != 'NONE')
     possibleNorms = f.read(4)
     if not possibleNorms:
         print_stderr('!!! WARNING. No normalization vectors found in the hic file.')
         return cpair_info, expected, factors, norm_info
+    
+    
     nExpectedValues = struct.unpack(b'<i', possibleNorms)[0]
     for _ in range(nExpectedValues):
         normtype = readcstr(f)
@@ -157,22 +187,36 @@ def read_footer(f, buf, masterindex):
             NORMS.append(normtype)
         unit = readcstr(f)
         binsize = struct.unpack(b'<i', f.read(4))[0]
-
-        nValues = struct.unpack(b'<i', f.read(4))[0]
-        expected[normtype, unit, binsize] = np.frombuffer(
-            buf,
-            dtype='<d',
-            count=nValues,
-            offset=f.tell())
-        f.seek(nValues * 8, 1)
-
-        nNormalizationFactors = struct.unpack(b'<i', f.read(4))[0]
-        factors[normtype, unit, binsize] = np.frombuffer(
-            buf,
-            dtype={'names':['chrom','factor'], 'formats':['<i', '<d']},
-            count=nNormalizationFactors,
-            offset=f.tell())
-        f.seek(nNormalizationFactors * 12, 1)
+        if version >= 9:
+            nValues = struct.unpack(b'<q', f.read(8))[0]
+            expected[normtype, unit, binsize] = np.frombuffer(
+                buf,
+                dtype='<f',
+                count=nValues,
+                offset=f.tell())
+            f.seek(nValues * 4, 1)
+            nNormalizationFactors = struct.unpack(b'<i', f.read(4))[0]
+            factors[normtype, unit, binsize] = np.frombuffer(
+                buf,
+                dtype={'names':['chrom','factor'], 'formats':['<i', '<f']},
+                count=nNormalizationFactors,
+                offset=f.tell())
+            f.seek(nNormalizationFactors * 8, 1)
+        else:
+            nValues = struct.unpack(b'<i', f.read(4))[0]
+            expected['RAW', unit, binsize] = np.frombuffer(
+                buf,
+                dtype=np.dtype('<d'),
+                count=nValues,
+                offset=f.tell())
+            f.seek(nValues * 8, 1)
+            nNormalizationFactors = struct.unpack(b'<i', f.read(4))[0]
+            factors['RAW', unit, binsize] = np.frombuffer(
+                buf,
+                dtype={'names':['chrom','factor'], 'formats':['<i', '<d']},
+                count=nNormalizationFactors,
+                offset=f.tell())
+            f.seek(nNormalizationFactors * 12, 1)
 
     nEntries = struct.unpack(b'<i', f.read(4))[0]
     for _ in range(nEntries):
@@ -181,14 +225,16 @@ def read_footer(f, buf, masterindex):
         unit = readcstr(f)
         resolution = struct.unpack(b'<i', f.read(4))[0]
         filePosition = struct.unpack(b'<q', f.read(8))[0]
-        sizeInBytes = struct.unpack(b'<i', f.read(4))[0]
+        if version >= 9:
+            sizeInBytes = struct.unpack(b'<q', f.read(8))[0]
+        else:
+            sizeInBytes = struct.unpack(b'<i', f.read(4))[0]
         norm_info[normtype, unit, resolution, chrIdx] = {
             'filepos': filePosition,
             'size': sizeInBytes
         }
 
     return cpair_info, expected, factors, norm_info
-
 
 def read_blockinfo(f, buf, filepos, unit, binsize):
     """
@@ -203,7 +249,7 @@ def read_blockinfo(f, buf, filepos, unit, binsize):
         unit_ = readcstr(f)
         f.seek(5 * 4, 1)
         binsize_ = struct.unpack('<i', f.read(4))[0]
-        blockBinCount = struct.unpack('<i', f.read(4))[0]
+        blockSize = struct.unpack('<i', f.read(4))[0]
         blockColCount = struct.unpack('<i', f.read(4))[0]
         nBlocks = struct.unpack('<i', f.read(4))[0]
         if unit == unit_ and binsize == binsize_:
@@ -212,7 +258,7 @@ def read_blockinfo(f, buf, filepos, unit, binsize):
 
     dt = {'names': ['block_id','filepos','size'], 'formats': ['<i', '<q', '<i']}
     data = np.frombuffer(buf, dt, count=nBlocks, offset=f.tell())
-    return data, blockBinCount, blockColCount
+    return data, blockSize, blockColCount
 
 
 def read_block(req, block_record):
@@ -242,6 +288,87 @@ def read_block(req, block_record):
             binX[i] = x
             binY[i] = y
             counts[i] = c
+    elif (version >= 9):
+        binXOffset = struct.unpack(b'<i', uncompressedBytes[4:8])[0]
+        binYOffset = struct.unpack(b'<i', uncompressedBytes[8:12])[0]
+        useFloatContact = struct.unpack(b'<b', uncompressedBytes[12:13])[0]
+        useIntXPos = struct.unpack(b'<b', uncompressedBytes[13:14])[0]
+        useIntYPos = struct.unpack(b'<b', uncompressedBytes[14:15])[0]
+        type_ = struct.unpack(b'<b', uncompressedBytes[15:16])[0]
+        k = 0
+        if (type_ == 1):
+            # Get number of rows
+            if (useIntYPos==0):
+                rowCount = struct.unpack(b'<h', uncompressedBytes[16:18])[0]
+                temp = 18
+            else:
+                rowCount = struct.unpack(b'<i', uncompressedBytes[16:20])[0]
+                temp = 20
+            # Iterate throught rows
+            for i in range(rowCount):
+                # Get row number
+                if (useIntYPos==0):
+                    rowNumber = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
+                    temp += 2
+                    rowNumber += binYOffset
+                else:
+                    rowNumber = struct.unpack(b'<i', uncompressedBytes[temp:(temp+4)])[0]
+                    temp += 4
+                    rowNumber += binYOffset
+                # Get column numbers
+                if (useIntXPos==0):
+                    recordCount = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
+                    temp += 2
+                else:
+                    recordCount = struct.unpack(b'<i', uncompressedBytes[temp:(temp+4)])[0]
+                    temp += 4
+                # Iterate throught columns of specific row
+                for _ in range(recordCount):
+                    if (useIntXPos==0):
+                        binColumn = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
+                        binColumn += binXOffset
+                        temp += 2
+                    else:
+                        binColumn = struct.unpack(b'<i', uncompressedBytes[temp:(temp+4)])[0]
+                        binColumn += binXOffset
+                        temp += 4
+                    if (useFloatContact==0):
+                        c = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
+                        temp += 2
+                    else:
+                        c = struct.unpack(b'<f', uncompressedBytes[temp:(temp+4)])[0]
+                        temp += 4
+                    binX[k] = binColumn
+                    binY[k] = rowNumber
+                    counts[k] = c
+                    k += 1
+        elif (type_== 2):
+            temp = 14
+            nPts = struct.unpack(b'<i', uncompressedBytes[temp:(temp+4)])[0]
+            temp += 4
+            w = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
+            temp += 2
+            for i in range(nPts):
+                row = int(i / w)
+                col = i - row * w
+                x = int(binXOffset + col)
+                y = int(binYOffset + row)
+                if useFloatContact == 0:
+                    c = struct.unpack(b'<h', uncompressedBytes[temp:(temp+2)])[0]
+                    temp = temp+2
+                    if c != -32768:
+                        binX[k] = x
+                        binY[k] = y
+                        counts[k] = c
+                        k += 1
+                else:
+                    c = struct.unpack(b'<f',uncompressedBytes[temp:(temp+4)])[0]
+                    temp=temp+4
+                    if c != 0x7fc00000 and not math.isnan(c):
+                        binX[k] = x
+                        binY[k] = y
+                        counts[k] = c
+                        k += 1
     else:
         binXOffset = struct.unpack(b'<i', uncompressedBytes[4:8])[0]
         binYOffset = struct.unpack(b'<i', uncompressedBytes[8:12])[0]
@@ -305,8 +432,12 @@ def read_block(req, block_record):
 def read_normalization_vector(f, buf, entry):
     filepos = entry['filepos']
     f.seek(filepos)
-    nValues = struct.unpack(b'<i', f.read(4))[0]
-    return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
+    if version >= 9:
+        nValues = struct.unpack(b'<q', f.read(8))[0]
+        return np.frombuffer(buf, dtype=np.dtype('<f'), count=nValues, offset=filepos+8)
+    else:
+        nValues = struct.unpack(b'<i', f.read(4))[0]
+        return np.frombuffer(buf, dtype=np.dtype('<d'), count=nValues, offset=filepos+4)
 
 
 def parse_hic(infile, pool, nproc, chr_key, unit, binsize, pair_footer_info,
@@ -341,7 +472,7 @@ def parse_hic(infile, pool, nproc, chr_key, unit, binsize, pair_footer_info,
     region_indices = [0, chr_bins[c1], 0, chr_bins[c2]]
     myFilePos = pair_footer_info[chr_key]
     with open(infile, 'rb') as req:
-        block_info, block_bins, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
+        block_info, block_size, block_cols = read_blockinfo(req, mmap_buf, myFilePos, unit, binsize)
     if len(block_info) >= nproc and nproc >= 2:
         mpi_result = [None] * nproc
         blocklen = len(block_info) // nproc
@@ -390,7 +521,7 @@ def build_counts_chunk(mpi, c1, c2, block_info, chr_offset_map, region_indices, 
 
 
 def initialize_res(outfile, infile, buf, unit, chr_info, genome, metadata,
-                   resolution, norm_info, multi_res, show_warnings):
+                   resolution, norm_info, norm, multi_res, show_warnings):
     """
     Use various information to initialize a cooler file in HDF5 format. Tables
     included are chroms, bins, pixels, and indexes.
@@ -425,7 +556,7 @@ def initialize_res(outfile, infile, buf, unit, chr_info, genome, metadata,
         # bins
         bin_table, chr_offsets, by_chr_bins, by_chr_offset_map = create_bins(chr_info, resolution)
         grp = h5resolution.create_group('bins')
-        write_bins(grp, infile, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, show_warnings)
+        write_bins(grp, infile, buf, unit, resolution, chr_names, bin_table, by_chr_bins, norm_info, norm, show_warnings)
         n_bins = len(bin_table)
         # indexes (just initialize bin1offets)
         grp = h5resolution.create_group('indexes')
@@ -512,7 +643,7 @@ def create_bins(chrs, binsize):
     return np.array(bins_array), np.array(offsets), by_chr_bins, by_chr_offsets
 
 
-def write_bins(grp, infile, buf, unit, res, chroms, bins, by_chr_bins, norm_info, show_warnings):
+def write_bins(grp, infile, buf, unit, res, chroms, bins, by_chr_bins, norm_info, norm_weight, show_warnings):
     """
     Write the bins table, which has columns: chrom, start (in bp), end (in bp),
     and one column for each normalization type, named for the norm type.
@@ -544,6 +675,40 @@ def write_bins(grp, infile, buf, unit, res, chroms, bins, by_chr_bins, norm_info
                        dtype=COORD_DTYPE,
                        data=ends,
                        **H5OPTS)
+    # check if user selected normalization factors and if they are available for the desired resolution
+    if norm_weight:
+        if norm_weight not in NORMS:
+            error_str = (
+                '!!! ERROR.Normalization method %s does not exist in hic file. Please select one of the following: %s'
+                    % (norm_weight, NORMS))
+            force_exit(error_str)
+        norm_data = []
+        for chr_idx in by_chr_bins:
+            chr_bin_end = by_chr_bins[chr_idx]
+            try:
+                # norm_keys = {k:v for k, v in norm_info.items() if k[0] == norm_weight and k[2] == res}
+                norm_key = norm_info[norm_weight, unit, res, chr_idx]
+                with open(infile, "rb") as req:
+                    norm_vector = read_normalization_vector(req, buf, norm_key)
+                norm_data.extend(norm_vector[:chr_bin_end])
+            except KeyError:
+                WARN = True
+                if show_warnings:
+                    print_stderr('!!! WARNING. Normalization vector %s does not exist for chr idx %s.'
+                        % (norm_weight, chr_idx))
+                norm_data.extend([np.nan]*chr_bin_end)
+        if len(norm_data) != n_bins:
+            error_str = (
+                '!!! ERROR. Length of normalization vector %s does not match the'
+                ' number of bins.\nThis is likely a problem with the hic file' % (norm_weight))
+            force_exit(error_str)
+        norm_data = [1 if x==0 or np.isnan(x) else 1/x for x in norm_data]
+        grp.create_dataset(
+            'weight',
+            shape=(len(norm_data),),
+            dtype=NORM_DTYPE,
+            data=np.array(norm_data, dtype=NORM_DTYPE),
+                **H5OPTS)
     # write columns for normalization vectors
     for norm in NORMS:
         norm_data = []
@@ -829,7 +994,7 @@ def run_hic2cool_updates(updates, infile, writefile):
     print('### Finished! Output written to: %s' % writefile)
 
 
-def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False, silent=False):
+def hic2cool_convert(infile, outfile, resolution=0, norm="", nproc=1, show_warnings=False, silent=False):
     """
     Main function that coordinates the reading of header and footer from infile
     and uses that information to parse the hic matrix.
@@ -856,8 +1021,8 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
     for i in range(0, nproc):
         reqarr.append(open(infile, 'rb'))
     mmap_buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
-    used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
-    pair_footer_info, expected, factors, norm_info = read_footer(req, mmap_buf, masteridx)
+    used_chrs, resolutions, footerPosition, genome, metadata = read_header(req)
+    pair_footer_info, expected, factors, norm_info = read_footer(req, mmap_buf, footerPosition)
     # expected/factors unused for now
     del expected
     del factors
@@ -917,7 +1082,7 @@ def hic2cool_convert(infile, outfile, resolution=0, nproc=1, show_warnings=False
         t_start = time.time()
         # initialize cooler file. return per resolution bin offset maps
         chr_offset_map, chr_bins = initialize_res(outfile, infile, mmap_buf, unit, used_chrs,
-                                        genome, metadata, binsize, norm_info, multi_res, show_warnings)
+                                                  genome, metadata, binsize, norm_info, norm, multi_res, show_warnings)
         covered_chr_pairs = []
         for chr_a in used_chrs:
             total_chunk = np.zeros(shape=0, dtype=CHUNK_DTYPE)
@@ -984,8 +1149,8 @@ def hic2cool_extractnorms(infile, outfile, exclude_mt=False, show_warnings=False
     WARN = False
     req = open(infile, 'rb')
     buf = mmap.mmap(req.fileno(), 0, access=mmap.ACCESS_READ)
-    used_chrs, resolutions, masteridx, genome, metadata = read_header(req)
-    pair_footer_info, expected, factors, norm_info = read_footer(req, buf, masteridx)
+    used_chrs, resolutions, footerPosition, genome, metadata = read_header(req)
+    pair_footer_info, expected, factors, norm_info = read_footer(req, buf, footerPosition)
     # expected/factors unused for now
     del expected
     del factors
